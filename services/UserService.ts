@@ -143,54 +143,76 @@ export const UserService = {
     },
 
     async getOrCreateProfile(userId: string, email: string, name: string): Promise<User> {
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .maybeSingle();
+        console.log(`[UserService] getOrCreateProfile started for ${userId}`);
+        try {
+            console.log(`[UserService] Fetching profile from 'profiles' table...`);
+            const { data: profiles, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId);
 
-        if (error) throw error;
+            if (error) {
+                console.error(`[UserService] Supabase select error:`, error);
+                throw error;
+            }
 
-        if (profile) {
-            // Profile exists, fetch subordinates and return
-            const { data: relations } = await supabase
-                .from('user_relationships')
-                .select('subordinate_id')
-                .eq('manager_id', userId);
+            console.log(`[UserService] Select result:`, profiles ? `Found ${profiles.length} profiles` : 'No profiles found');
+            const profile = profiles && profiles.length > 0 ? profiles[0] : null;
 
-            return {
-                id: profile.id,
-                name: profile.full_name,
-                email: profile.email,
-                isManager: profile.is_manager,
-                isAdmin: profile.is_admin,
-                subordinates: relations?.map(r => r.subordinate_id) || []
+            if (profile) {
+                console.log(`[UserService] Profile exists for ${profile.full_name}, fetching relationships...`);
+                // Profile exists, fetch subordinates and return
+                const { data: relations, error: relError } = await supabase
+                    .from('user_relationships')
+                    .select('subordinate_id')
+                    .eq('manager_id', userId);
+
+                if (relError) {
+                    console.error(`[UserService] Relationship fetch error:`, relError);
+                }
+
+                return {
+                    id: profile.id,
+                    name: profile.full_name,
+                    email: profile.email,
+                    isManager: profile.is_manager,
+                    isAdmin: profile.is_admin,
+                    subordinates: relations?.map(r => r.subordinate_id) || []
+                };
+            }
+
+            console.log(`[UserService] No profile found, creating new one for ${name}...`);
+            // Create new profile for first-time user
+            const newProfile = {
+                id: userId,
+                email: email,
+                full_name: name,
+                is_manager: false, // Default to false for new social logins
+                is_admin: false
             };
+
+            const { error: insertError } = await supabase
+                .from('profiles')
+                .insert(newProfile);
+
+            if (insertError) {
+                console.error(`[UserService] Profile insert error:`, insertError);
+                throw insertError;
+            }
+
+            console.log(`[UserService] New profile created successfully for ${name}`);
+            return {
+                id: newProfile.id,
+                name: newProfile.full_name,
+                email: newProfile.email,
+                isManager: newProfile.is_manager,
+                isAdmin: newProfile.is_admin,
+                subordinates: []
+            };
+        } catch (err) {
+            console.error(`[UserService] Fatal error in getOrCreateProfile:`, err);
+            throw err;
         }
-
-        // Create new profile for first-time user
-        const newProfile = {
-            id: userId,
-            email: email,
-            full_name: name,
-            is_manager: false, // Default to false for new social logins
-            is_admin: false
-        };
-
-        const { error: insertError } = await supabase
-            .from('profiles')
-            .insert(newProfile);
-
-        if (insertError) throw insertError;
-
-        return {
-            id: newProfile.id,
-            name: newProfile.full_name,
-            email: newProfile.email,
-            isManager: newProfile.is_manager,
-            isAdmin: newProfile.is_admin,
-            subordinates: []
-        };
     },
     async deleteUser(userId: string): Promise<void> {
         // 1. Delete Weekly Plans (tasks will be deleted by ON DELETE CASCADE if set, else manual)
