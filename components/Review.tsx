@@ -164,8 +164,8 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                 <Clock className="w-5 h-5 text-orange-600" />
                                 <h3 className="font-bold text-orange-900">上週週計畫檢討 (與職員進度追蹤)</h3>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm min-w-[800px]">
+                            <div className="overflow-x-auto -mx-2 md:mx-0">
+                                <table className="w-full text-left text-sm min-w-[700px] md:min-w-[800px]">
                                     <thead className="bg-orange-100/50 text-orange-900 border-b border-orange-200">
                                         <tr>
                                             <th className="p-4 w-24">類別</th>

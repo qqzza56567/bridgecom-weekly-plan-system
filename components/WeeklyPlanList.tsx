@@ -169,8 +169,8 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                         )}
 
                         {/* Tasks Table */}
-                        <div className="overflow-x-auto rounded-lg border border-gray-200">
-                            <table className="w-full text-left text-sm bg-white">
+                        <div className="overflow-x-auto rounded-lg border border-gray-200 -mx-2 md:mx-0">
+                            <table className="w-full text-left text-sm bg-white min-w-[600px] md:min-w-full">
                                 <thead className="bg-gray-100 text-gray-600 font-medium">
                                     <tr>
                                         <th className="p-2 w-20">類別</th>

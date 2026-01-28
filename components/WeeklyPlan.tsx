@@ -323,8 +323,8 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                                 <p className="text-sm text-orange-700 opacity-80">請更新上週任務的實際執行狀況，並可將未完成或例行任務複製到本週。</p>
                             </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left min-w-[900px]">
+                        <div className="overflow-x-auto -mx-2 md:mx-0">
+                            <table className="w-full text-left text-sm min-w-[700px] md:min-w-[800px]">
                                 <thead className="bg-orange-100/50 text-orange-900 text-sm">
                                     <tr>
                                         <th className="p-4 w-24">類別</th>
