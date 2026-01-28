@@ -25,9 +25,9 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, onBack, showBac
         {!showBack && <div className="w-16"></div>} {/* Spacer */}
       </div>
 
-      {/* Logo Placeholder - Styled to match screenshot */}
-      <div className="absolute left-1/2 transform -translate-x-1/2 top-4 md:top-8 md:static md:transform-none md:mr-auto md:ml-4">
-        {/* Mobile absolute positioning, Desktop static */}
+      {/* Logo Container */}
+      <div className="absolute left-1/2 transform -translate-x-1/2 top-4 md:top-8 md:static md:transform-none md:mr-auto md:ml-4 flex items-center">
+        <img src="/logo.png" alt={COMPANY_NAME} className="h-8 md:h-10 object-contain" />
       </div>
 
       <div className="text-right">

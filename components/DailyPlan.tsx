@@ -290,8 +290,8 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                             )}
 
                             <div className="flex items-start gap-4 mb-6">
-                                <div className="bg-gray-200 p-2 rounded border border-gray-300">
-                                    <span className="text-blue-700 font-bold text-xs">{COMPANY_NAME}</span>
+                                <div className="flex items-center">
+                                    <img src="/logo.png" alt={COMPANY_NAME} className="h-8 object-contain" />
                                 </div>
                                 <div className="flex-1">
                                     <p className="text-gray-500 text-sm">請專注於今日最有價值的工作項目</p>

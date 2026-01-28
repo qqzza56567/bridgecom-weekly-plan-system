@@ -44,16 +44,8 @@ export const Login: React.FC = () => {
             <div className="z-10 w-full max-w-md animate-fadeIn">
                 {/* Logo & Header */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-3xl shadow-xl shadow-blue-200 mb-6 group transition-transform hover:scale-105 duration-300">
-                        <div className="grid grid-cols-2 gap-1.5 p-4">
-                            <div className="w-3.5 h-3.5 bg-white/40 rounded-sm"></div>
-                            <div className="w-3.5 h-3.5 bg-white rounded-sm"></div>
-                            <div className="w-3.5 h-3.5 bg-white rounded-sm"></div>
-                            <div className="w-3.5 h-3.5 bg-white/40 rounded-sm"></div>
-                        </div>
-                    </div>
-                    <div className="bg-gray-200 px-3 py-1 inline-block rounded-sm mb-3 border border-gray-300 font-bold text-[10px] tracking-widest text-blue-700">
-                        {COMPANY_NAME}
+                    <div className="mb-6 flex justify-center">
+                        <img src="/logo.png" alt={COMPANY_NAME} className="h-20 md:h-24 object-contain animate-fadeIn" />
                     </div>
                     <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight mb-2">
                         {APP_NAME}
