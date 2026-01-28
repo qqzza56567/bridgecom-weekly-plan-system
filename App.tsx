@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, WeeklyPlanSubmission, DailyPlanSubmission } from './types';
 import { ToastProvider, useToast } from './components/Toast';
-import { MOCK_USERS } from './constants';
 import { Login } from './components/Login';
-import { BrowserRouter, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { Loader2, RefreshCw, LogOut, AlertTriangle } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 // Lazy load components
@@ -21,7 +20,31 @@ import { UserService } from './services/UserService';
 import { PlanService } from './services/PlanService';
 import { DailyPlanService } from './services/DailyPlanService';
 
-// Moved outside to prevent remounting on App re-renders
+// --- Components ---
+
+const LoadingScreen = ({ message }: { message: string }) => (
+  <div className="min-h-screen flex items-center justify-center bg-[#f8faff] flex-col gap-6 p-6 text-center">
+    <div className="relative">
+      <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-2 h-2 bg-blue-600 rounded-full animate-ping"></div>
+      </div>
+    </div>
+    <div>
+      <h2 className="text-xl font-bold text-gray-800 mb-2">{message}</h2>
+      <p className="text-sm text-gray-400">正在與安全伺服器建立連線，請稍候...</p>
+    </div>
+    <div className="mt-8">
+      <button
+        onClick={() => window.location.reload()}
+        className="text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1"
+      >
+        <RefreshCw className="w-3 h-3" /> 如果長時間卡住，請點此重新整理
+      </button>
+    </div>
+  </div>
+);
+
 const RequireAuth = ({
   children,
   session,
@@ -35,32 +58,40 @@ const RequireAuth = ({
   isLoading: boolean,
   onLogout: () => void
 }) => {
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400 bg-gray-50 flex-col gap-4">
-        <Loader2 className="animate-spin text-blue-500 w-10 h-10" />
-        <span className="font-bold tracking-widest text-sm animate-pulse text-gray-500">系統初始化中...</span>
-        <div className="mt-4 text-[10px] text-gray-300">如果長時間卡住，請重新整理頁面</div>
-      </div>
-    );
-  }
+  if (isLoading) return <LoadingScreen message="系統初始化..." />;
 
   if (!session) return <Navigate to="/" replace />;
 
   if (session && !currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-red-50">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md text-center border border-red-100">
-          <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600 font-bold text-2xl">!</div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">員工資料載入失敗</h3>
-          <div className="text-gray-500 mb-6 leading-relaxed">
-            系統中可能尚未建立您的員工資料，或是連線不穩定。
-            <br />
-            ID: <span className="font-mono text-xs">{session.user.id}</span>
+      <div className="min-h-screen flex items-center justify-center p-6 bg-[#fff5f5]">
+        <div className="bg-white p-10 rounded-[32px] shadow-2xl shadow-red-100 max-w-md w-full text-center border border-red-50">
+          <div className="bg-red-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle className="w-10 h-10 text-red-500" />
           </div>
-          <div className="flex flex-col gap-2">
-            <button onClick={() => window.location.reload()} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg">手動刷新</button>
-            <button onClick={onLogout} className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 transition">退出登入</button>
+          <h3 className="text-2xl font-black text-gray-900 mb-3">員工資料載入失敗</h3>
+          <p className="text-gray-500 mb-8 leading-relaxed font-medium">
+            您的 Google 帳號雖然已登入，但資料庫連線逾時或尚未建立員工檔案。
+          </p>
+
+          <div className="bg-gray-50 p-4 rounded-2xl mb-8 text-left">
+            <div className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">User ID</div>
+            <div className="font-mono text-xs text-gray-600 break-all">{session.user.id}</div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200 flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" /> 重新整理頁面
+            </button>
+            <button
+              onClick={onLogout}
+              className="w-full bg-white border-2 border-gray-100 text-gray-500 py-4 rounded-2xl font-bold hover:bg-gray-50 hover:border-gray-200 transition flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-5 h-5" /> 退出登入
+            </button>
           </div>
         </div>
       </div>
@@ -69,54 +100,39 @@ const RequireAuth = ({
   return children;
 };
 
-const RequireAdmin = ({
-  children,
-  currentUser,
-  isLoading
-}: {
-  children: React.ReactElement,
-  currentUser: User | null,
-  isLoading: boolean
-}) => {
-  if (isLoading) return null;
-  if (!currentUser?.isAdmin) return <Navigate to="/dashboard" replace />;
-  return children;
-};
-
 const AppContent: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const toast = useToast();
-  const authLoadedRef = useRef(false);
+  const initInvoked = useRef(false);
 
-  // --- Data State ---
+  // --- Data States ---
   const [users, setUsers] = useState<User[]>([]);
   const [weeklyPlans, setWeeklyPlans] = useState<WeeklyPlanSubmission[]>([]);
   const [dailyPlans, setDailyPlans] = useState<DailyPlanSubmission[]>([]);
-
-  // States for flow control
   const [editingPlan, setEditingPlan] = useState<WeeklyPlanSubmission | undefined>(undefined);
   const [targetWeekStart, setTargetWeekStart] = useState<string | undefined>(undefined);
 
-  const refreshUserData = async (userId: string, email: string, name: string) => {
-    console.log(`[Flow] refreshUserData started for ${userId} (${email})`);
+  // --- Core Sync Logic (Inlined for reliability) ---
+  const syncAppData = async (userId: string, email: string, name: string) => {
+    console.log(`[Core] Starting sync for ${userId}`);
     try {
-      // 1. Fetch Profile
-      console.log(`[Flow] Calling getOrCreateProfile...`);
-      const userProfile = await UserService.getOrCreateProfile(userId, email, name);
-      console.log(`[Flow] Profile obtained:`, userProfile.name);
-      setCurrentUser(userProfile);
+      // 1. Get or Create Profile with 5-second timeout
+      const profilePromise = UserService.getOrCreateProfile(userId, email, name);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database Timeout")), 5000));
 
-      // 2. Load Data based on role
-      console.log(`[Flow] Fetching app data (Role: ${userProfile.isManager ? 'Manager' : 'User'})...`);
+      const userProfile = await Promise.race([profilePromise, timeoutPromise]) as User;
+      setCurrentUser(userProfile);
+      console.log(`[Core] Profile loaded: ${userProfile.name}`);
+
+      // 2. Load App Data
       if (userProfile.isManager || userProfile.isAdmin) {
         const [allUsers, allPlans, allDaily] = await Promise.all([
           UserService.fetchAllUsers(),
           PlanService.fetchAllPlans(),
           DailyPlanService.fetchAllDailyPlans()
         ]);
-        console.log(`[Flow] Manager data loaded: ${allPlans.length} plans, ${allUsers.length} users.`);
         setUsers(allUsers);
         setWeeklyPlans(allPlans);
         setDailyPlans(allDaily);
@@ -125,93 +141,78 @@ const AppContent: React.FC = () => {
           PlanService.fetchUserPlans(userId),
           DailyPlanService.fetchDailyPlansByUser(userId)
         ]);
-        console.log(`[Flow] User data loaded: ${myPlans.length} plans.`);
         setWeeklyPlans(myPlans);
         setDailyPlans(myDaily);
       }
     } catch (e: any) {
-      console.error("[Flow] Data refresh failed:", e);
-      // Even if data load fails, we should stop loading screen to show the error state or RequireAuth fallback
-      toast.error("資料載入異常，請檢查網路連線。");
+      console.error("[Core] Sync Failed:", e);
+      toast.error(e.message === "Database Timeout" ? "連線逾時，請檢查網路或是重新整理" : "資料載入失敗");
     } finally {
-      console.log("[Flow] refreshUserData finished, setting isLoading to false.");
       setIsLoading(false);
     }
   };
 
-  // --- Auth & Initialization ---
   useEffect(() => {
-    let isMounted = true;
-    console.log("[Auth] AppContent useEffect started.");
+    if (initInvoked.current) return;
+    initInvoked.current = true;
 
-    // 啟動一個超時保護，如果 5 秒後還是 isLoading，強制解除（讓 RequireAuth 接手顯示錯誤或導向）
-    const loadingKiller = setTimeout(() => {
+    let isMounted = true;
+    console.log("[Auth] Bootstrap initialized.");
+
+    // Absolute fallback: If still loading after 8 seconds, just show whatever we have
+    const emergencyUnlock = setTimeout(() => {
       if (isMounted && isLoading) {
-        console.warn("[Auth] Killer timeout hit! Forcing isLoading to false.");
+        console.warn("[Auth] Emergency Unlock! Initializing timed out.");
         setIsLoading(false);
       }
-    }, 6000);
+    }, 8000);
 
-    // 監聽 Auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      console.log(`[Auth] Event Received: ${event}`);
-
+      console.log(`[Auth] Event: ${event}`);
       if (!isMounted) return;
-      authLoadedRef.current = true;
+
       setSession(newSession);
 
       if (newSession?.user) {
-        console.log("[Auth] Session valid, refreshing profile...");
         const email = newSession.user.email || '';
         const name = newSession.user.user_metadata?.full_name || email.split('@')[0] || '使用者';
-        await refreshUserData(newSession.user.id, email, name);
+        await syncAppData(newSession.user.id, email, name);
       } else {
-        console.log("[Auth] No session found or SIGNED_OUT.");
-        setCurrentUser(null);
         setIsLoading(false);
       }
     });
 
-    // 雙重檢查：主動獲取當前 Session
+    // Immediate check
     (async () => {
-      console.log("[Auth] Immediate manual session check...");
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (isMounted && !authLoadedRef.current) {
-        if (currentSession) {
-          console.log("[Auth] Manual check found session.");
-          setSession(currentSession);
-          const email = currentSession.user.email || '';
-          const name = currentSession.user.user_metadata?.full_name || email.split('@')[0] || '使用者';
-          await refreshUserData(currentSession.user.id, email, name);
-        } else {
-          console.log("[Auth] Manual check found no session.");
-        }
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (isMounted && initialSession && !currentUser) {
+        setSession(initialSession);
+        const email = initialSession.user.email || '';
+        const name = initialSession.user.user_metadata?.full_name || email.split('@')[0] || '使用者';
+        await syncAppData(initialSession.user.id, email, name);
+      } else if (isMounted && !initialSession) {
+        // Just let it be, the listener will catch it or it stays in Login
       }
     })();
 
     return () => {
-      console.log("[Auth] AppContent Cleanup.");
       isMounted = false;
       subscription.unsubscribe();
-      clearTimeout(loadingKiller);
+      clearTimeout(emergencyUnlock);
     };
   }, []);
 
+  // --- Handlers ---
   const handleAddOrUpdateWeeklyPlan = React.useCallback(async (plan: WeeklyPlanSubmission) => {
     try {
       const finalId = await PlanService.savePlan(plan, true);
       const finalizedPlan: WeeklyPlanSubmission = { ...plan, id: finalId };
       setEditingPlan(finalizedPlan);
-
       setWeeklyPlans(prev => {
         const index = prev.findIndex(p => p.id === plan.id || p.id === finalId);
-        let newPlans: WeeklyPlanSubmission[];
-        if (index >= 0) {
-          newPlans = [...prev];
-          newPlans[index] = finalizedPlan;
-        } else {
-          newPlans = [finalizedPlan, ...prev];
-        }
+        let newPlans = [...prev];
+        if (index >= 0) newPlans[index] = finalizedPlan;
+        else newPlans = [finalizedPlan, ...prev];
         return newPlans.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
       });
       toast.success("週計畫已儲存");
@@ -248,24 +249,12 @@ const AppContent: React.FC = () => {
 
   const handleReviewUpdate = React.useCallback(async (plan: WeeklyPlanSubmission) => {
     try {
-      await PlanService.updateReviewData(
-        plan.id,
-        plan.status,
-        plan.reviewComment || '',
-        plan.lastWeekReview
-      );
-
+      await PlanService.updateReviewData(plan.id, plan.status, plan.reviewComment || '', plan.lastWeekReview);
       setWeeklyPlans(prev => {
         const index = prev.findIndex(p => p.id === plan.id);
         if (index >= 0) {
           const newPlans = [...prev];
-          newPlans[index] = {
-            ...newPlans[index],
-            status: plan.status,
-            reviewComment: plan.reviewComment,
-            lastWeekReview: plan.lastWeekReview,
-            updatedAt: new Date().toISOString()
-          };
+          newPlans[index] = { ...newPlans[index], status: plan.status, reviewComment: plan.reviewComment, lastWeekReview: plan.lastWeekReview, updatedAt: new Date().toISOString() };
           return newPlans;
         }
         return prev;
@@ -280,53 +269,26 @@ const AppContent: React.FC = () => {
   const navigate = useNavigate();
 
   return (
-    <React.Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center text-gray-400 bg-gray-50 flex-col gap-4">
-        <Loader2 className="animate-spin text-blue-500 w-10 h-10" />
-        <span className="font-bold tracking-widest text-sm text-gray-400">載入模組中...</span>
-      </div>
-    }>
+    <React.Suspense fallback={<LoadingScreen message="載入頁面模組..." />}>
       <Routes>
         <Route path="/" element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route
           path="/dashboard"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
-              <Dashboard
-                user={currentUser!}
-                onNavigate={(path) => navigate(`/${path}`)}
-                onLogout={handleLogout}
-              />
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
+              <Dashboard user={currentUser!} onNavigate={(path) => navigate(`/${path}`)} onLogout={handleLogout} />
             </RequireAuth>
           }
         />
         <Route
           path="/weekly-plan"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
               <WeeklyPlanList
                 user={currentUser!}
                 plans={weeklyPlans.filter(p => p.userId === currentUser?.id)}
-                onCreate={(weekStart) => {
-                  setEditingPlan(undefined);
-                  setTargetWeekStart(weekStart);
-                  navigate('/weekly-plan/form');
-                }}
-                onEdit={(plan) => {
-                  setEditingPlan(plan);
-                  setTargetWeekStart(undefined);
-                  navigate('/weekly-plan/form');
-                }}
+                onCreate={(weekStart) => { setEditingPlan(undefined); setTargetWeekStart(weekStart); navigate('/weekly-plan/form'); }}
+                onEdit={(plan) => { setEditingPlan(plan); setTargetWeekStart(undefined); navigate('/weekly-plan/form'); }}
                 onWithdraw={handleWithdrawPlan}
                 onBack={() => navigate('/dashboard')}
               />
@@ -336,12 +298,7 @@ const AppContent: React.FC = () => {
         <Route
           path="/weekly-plan/form"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
               <WeeklyPlan
                 user={currentUser!}
                 initialData={editingPlan}
@@ -356,37 +313,17 @@ const AppContent: React.FC = () => {
         <Route
           path="/daily-plan"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
-              <DailyPlan
-                user={currentUser!}
-                onSubmit={handleAddDailyPlan}
-                onBack={() => navigate('/dashboard')}
-              />
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
+              <DailyPlan user={currentUser!} onSubmit={handleAddDailyPlan} onBack={() => navigate('/dashboard')} />
             </RequireAuth>
           }
         />
         <Route
           path="/review"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
               {currentUser?.isManager || currentUser?.isAdmin ? (
-                <Review
-                  user={currentUser!}
-                  users={users}
-                  weeklyPlans={weeklyPlans}
-                  onUpdatePlan={handleReviewUpdate}
-                  onBack={() => navigate('/dashboard')}
-                />
+                <Review user={currentUser!} users={users} weeklyPlans={weeklyPlans} onUpdatePlan={handleReviewUpdate} onBack={() => navigate('/dashboard')} />
               ) : (
                 <Navigate to="/dashboard" replace />
               )}
@@ -396,60 +333,34 @@ const AppContent: React.FC = () => {
         <Route
           path="/admin"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
-              <RequireAdmin currentUser={currentUser} isLoading={isLoading}>
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
+              {currentUser?.isAdmin ? (
                 <Admin
                   users={users}
                   onSave={async (user) => {
-                    const exists = users.find(u => u.id === user.id);
-                    if (exists) {
-                      await UserService.updateUser(user);
-                    } else {
-                      await UserService.createUser(user);
-                    }
-                    const updated = await UserService.fetchAllUsers();
-                    setUsers(updated);
+                    if (users.find(u => u.id === user.id)) await UserService.updateUser(user);
+                    else await UserService.createUser(user);
+                    setUsers(await UserService.fetchAllUsers());
                   }}
-                  onDelete={async (id) => {
-                    await UserService.deleteUser(id);
-                    const updated = await UserService.fetchAllUsers();
-                    setUsers(updated);
-                  }}
+                  onDelete={async (id) => { await UserService.deleteUser(id); setUsers(await UserService.fetchAllUsers()); }}
                   onResetData={async () => {
-                    await PlanService.clearAllPlans();
-                    await DailyPlanService.clearAllDailyPlans();
-                    const updatedPlans = await PlanService.fetchAllPlans();
-                    const updatedDaily = await DailyPlanService.fetchAllDailyPlans();
-                    setWeeklyPlans(updatedPlans);
-                    setDailyPlans(updatedDaily);
+                    await PlanService.clearAllPlans(); await DailyPlanService.clearAllDailyPlans();
+                    setWeeklyPlans(await PlanService.fetchAllPlans()); setDailyPlans(await DailyPlanService.fetchAllDailyPlans());
                   }}
                   onImportPlans={async (plans) => {
-                    for (const plan of plans) {
-                      await PlanService.savePlan(plan, true);
-                    }
-                    const updated = await PlanService.fetchAllPlans();
-                    setWeeklyPlans(updated);
+                    for (const plan of plans) await PlanService.savePlan(plan, true);
+                    setWeeklyPlans(await PlanService.fetchAllPlans());
                   }}
                   onBack={() => navigate('/dashboard')}
                 />
-              </RequireAdmin>
+              ) : <Navigate to="/dashboard" replace />}
             </RequireAuth>
           }
         />
         <Route
           path="/tracking"
           element={
-            <RequireAuth
-              session={session}
-              currentUser={currentUser}
-              isLoading={isLoading}
-              onLogout={handleLogout}
-            >
+            <RequireAuth session={session} currentUser={currentUser} isLoading={isLoading} onLogout={handleLogout}>
               <Tracking
                 user={currentUser!}
                 weeklyPlans={weeklyPlans.filter(p => p.userId === currentUser?.id)}
@@ -459,25 +370,18 @@ const AppContent: React.FC = () => {
             </RequireAuth>
           }
         />
-        {/* Catch-all route to redirect back to dashboard */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </React.Suspense>
   );
 };
 
-const WrappedAppContent = () => {
-  return (
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
-  );
-};
-
 const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <WrappedAppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </BrowserRouter>
   );
 };
