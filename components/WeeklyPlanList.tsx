@@ -193,12 +193,12 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                                             <td className="p-2 text-center text-gray-600 align-top">{t.actualHours || 0}</td>
                                             <td className="p-2 align-top text-center">
                                                 <div className="flex flex-col items-center gap-1 min-w-[100px]">
-                                                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${(t.progress ?? 0) < 80 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${(t.progress ?? 0) === 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                                                         進度: {t.progress ?? 0}%
                                                     </span>
                                                     <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
                                                         <div
-                                                            className={`h-full transition-all duration-500 ${t.progress === 100 ? 'bg-green-500' : 'bg-blue-400'}`}
+                                                            className={`h-full transition-all duration-500 ${t.progress === 100 ? 'bg-green-500' : 'bg-orange-400'}`}
                                                             style={{ width: `${t.progress}%` }}
                                                         />
                                                     </div>

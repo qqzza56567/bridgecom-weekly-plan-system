@@ -264,7 +264,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                             <div className="flex justify-between items-start mb-2">
                                 <span className="font-bold text-gray-900 text-base leading-tight flex-1 mr-4">{task.outcome}</span>
                                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${(task.progress ?? 0) < 80 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${(task.progress ?? 0) === 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                                         進度: {task.progress ?? 0}%
                                     </span>
                                     <span className="text-[10px] bg-white border px-1.5 py-0.5 rounded text-gray-500 font-medium whitespace-nowrap">{task.priority}</span>
