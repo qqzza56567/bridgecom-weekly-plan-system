@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, WeeklyTask, TaskCategory, TaskPriority, WeeklyPlanSubmission, LastWeekTaskReview, TaskStatus } from '../types';
-import { Plus, X, AlertCircle, History, CheckCircle, Copy, Clock, AlertTriangle, Loader2 } from 'lucide-react';
+import { Plus, X, AlertCircle, History, CheckCircle, Copy, Clock, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { COMPANY_NAME } from '../constants';
 import { getPlanningWeekStart, getPreviousWeekStart, getWeekRangeString, toLocalISOString, daysBetweenLocal } from '../utils/dateUtils';
 import { Header } from './Header';
 import { generateId } from '../utils/uuid';
+import { useToast } from '../components/Toast';
 
 interface WeeklyPlanProps {
     user: User;
@@ -16,6 +17,7 @@ interface WeeklyPlanProps {
 }
 
 export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targetWeekStart, allPlans = [], onSubmit, onBack }) => {
+    const toast = useToast();
     // --- Current Week Tasks State ---
     const [tasks, setTasks] = useState<WeeklyTask[]>([
         {
@@ -112,6 +114,33 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
             }
             return t;
         }));
+    };
+
+    const handleSyncLastWeek = () => {
+        if (!lastPlan) {
+            // Should not happen if button is shown, but safety first
+            return;
+        }
+
+        if (!window.confirm("確定要重新同步上週計畫嗎？\n\n警告：這將會覆蓋您目前在「上週檢討」欄位中填寫的所有進度與實際時數，並載入上週計畫的最新版本。")) {
+            return;
+        }
+
+        const freshReviews: LastWeekTaskReview[] = lastPlan.tasks.map(t => ({
+            taskId: t.id,
+            name: t.name,
+            category: t.category,
+            outcome: t.outcome,
+            hours: t.hours,
+            actualHours: 0,   // Reset or keep? Usually sync means "I want the new structure", but maybe we should try to preserve? 
+            // User request implies "I want to sync content". 
+            // Resetting actuals/progress is safer to avoid mismatch, but let's stick to a clean slate from the source plan as defaults.
+            progress: 0,
+            notDoneReason: ''
+        }));
+
+        setReviewTasks(freshReviews);
+        toast.success("已同步上週最新計畫內容");
     };
 
     const handleCopyTaskToCurrent = (rTask: LastWeekTaskReview) => {
@@ -316,12 +345,22 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                 {/* --- SECTION 1: LAST WEEK REVIEW (SELF CLICK) --- */}
                 {reviewTasks.length > 0 && (
                     <div className="bg-orange-50 rounded-xl shadow-md border border-orange-200 overflow-hidden animate-fadeIn">
-                        <div className="p-4 md:p-6 border-b border-orange-200 flex items-center gap-3 bg-gradient-to-r from-orange-50 to-white">
-                            <Clock className="w-6 h-6 text-orange-600" />
-                            <div>
-                                <h2 className="text-lg font-bold text-orange-900">上週計畫自我檢視</h2>
-                                <p className="text-sm text-orange-700 opacity-80">請更新上週任務的實際執行狀況，並可將未完成或例行任務複製到本週。</p>
+                        <div className="p-4 md:p-6 border-b border-orange-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-orange-50 to-white">
+                            <div className="flex items-center gap-3">
+                                <Clock className="w-6 h-6 text-orange-600 flex-shrink-0" />
+                                <div>
+                                    <h2 className="text-lg font-bold text-orange-900">上週計畫自我檢視</h2>
+                                    <p className="text-sm text-orange-700 opacity-80 leading-tight">請更新上週任務的實際執行狀況，並可將未完成或例行任務複製到本週。</p>
+                                </div>
                             </div>
+                            <button
+                                onClick={handleSyncLastWeek}
+                                className="flex items-center justify-center px-4 py-2 bg-white border border-orange-300 text-orange-700 rounded-lg shadow-sm hover:bg-orange-100 transition text-sm font-bold whitespace-nowrap group"
+                                title="重新從上週計畫載入最新資料 (將覆蓋目前填寫的檢討)"
+                            >
+                                <RefreshCw className="w-4 h-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
+                                同步上週資料
+                            </button>
                         </div>
                         <div className="overflow-x-auto -mx-2 md:mx-0">
                             <table className="w-full text-left text-sm min-w-[700px] md:min-w-[800px]">
