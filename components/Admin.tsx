@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Mail, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Mail, Calendar, CheckCircle, XCircle, Clock, Eye, ArrowLeft } from 'lucide-react';
 import { MonitoringService, UserStatus } from '../services/MonitoringService';
 import { EmailService } from '../services/EmailService';
 import { getCurrentWeekStart } from '../utils/dateUtils';
 import { useToast } from '../components/Toast';
-import { User, WeeklyPlanSubmission } from '../types';
+import { User, WeeklyPlanSubmission, DailyPlanSubmission } from '../types';
 import { Header } from './Header';
 import { generateId } from '../utils/uuid';
 import { COMPANY_NAME } from '../constants';
 import { ConfirmModal } from './ConfirmModal';
+import { Tracking } from './Tracking';
 
 interface AdminProps {
   users: User[];
+  weeklyPlans: WeeklyPlanSubmission[];
+  dailyPlans: DailyPlanSubmission[];
   onSave: (user: User) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onResetData: () => Promise<void>;
@@ -19,16 +22,18 @@ interface AdminProps {
   onBack: () => void;
 }
 
-export const Admin: React.FC<AdminProps> = ({ users, onSave, onDelete, onResetData, onImportPlans, onBack }) => {
+export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, onSave, onDelete, onResetData, onImportPlans, onBack }) => {
   const toast = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [currentUser, setCurrentUser] = useState<Partial<User>>({});
   const [importJson, setImportJson] = useState('');
   const [isMaintenanceOpen, setIsMaintenanceOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [viewingUser, setViewingUser] = useState<User | null>(null);
 
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState<'users' | 'monitoring'>('users');
+  const [monitoringSubTab, setMonitoringSubTab] = useState<'weekly' | 'daily'>('weekly');
 
   // --- Monitoring State ---
   const [monitoringData, setMonitoringData] = useState<UserStatus[]>([]);
@@ -169,293 +174,343 @@ export const Admin: React.FC<AdminProps> = ({ users, onSave, onDelete, onResetDa
 
   return (
     <div className="min-h-screen bg-[#eef5ff] p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
-        <Header title="後台管理" subtitle="使用者與權限管理" onBack={onBack} />
-
-        <Header title="後台管理" subtitle="使用者與權限管理及系統監控" onBack={onBack} />
-
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-sm mb-6 w-fit mx-auto md:mx-0 border border-gray-100">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'users' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
-          >
-            <Users size={16} className="mr-2" /> 人員管理
-          </button>
-          <button
-            onClick={() => setActiveTab('monitoring')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'monitoring' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
-          >
-            <LayoutDashboard size={16} className="mr-2" /> 監控報表
-          </button>
-        </div>
-
-        {activeTab === 'users' ? (
+      <div className="max-w-6xl mx-auto">
+        {viewingUser ? (
+          <Tracking
+            user={viewingUser}
+            weeklyPlans={weeklyPlans}
+            dailyPlans={dailyPlans}
+            onBack={() => setViewingUser(null)}
+          />
+        ) : (
           <>
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div className="bg-gray-200 px-3 py-1 inline-block rounded-sm border border-gray-300">
-                  <span className="text-blue-700 font-bold tracking-widest text-xs">{COMPANY_NAME}</span>
-                </div>
-                <button
-                  onClick={handleAdd}
-                  className="flex items-center bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-md font-bold"
-                >
-                  <Plus size={18} className="mr-2" /> 新增使用者
-                </button>
-              </div>
+            <Header title="後台管理" subtitle="使用者與權限管理及系統監控" onBack={onBack} />
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="p-4 font-bold text-gray-700">姓名</th>
-                      <th className="p-4 font-bold text-gray-700">Email</th>
-                      <th className="p-4 font-bold text-gray-700">角色權限</th>
-                      <th className="p-4 font-bold text-gray-700">管理下屬</th>
-                      <th className="p-4 font-bold text-gray-700 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map(user => {
-                      // Check if this user (if they are generic staff) has a manager
-                      const hasManager = users.some(u => u.subordinates?.includes(user.id));
-                      const isGeneralStaff = !user.isManager && !user.isAdmin;
-
-                      return (
-                        <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="p-4 text-gray-800 font-medium">{user.name}</td>
-                          <td className="p-4 text-gray-600 text-sm">{user.email || '-'}</td>
-                          <td className="p-4 flex gap-2 items-center flex-wrap">
-                            {user.isAdmin && (
-                              <span className="flex items-center bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold">
-                                <Shield className="w-3 h-3 mr-1" /> 管理員
-                              </span>
-                            )}
-                            {user.isManager ? (
-                              <span className="flex items-center bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">
-                                <Users className="w-3 h-3 mr-1" /> 主管
-                              </span>
-                            ) : (
-                              isGeneralStaff && (
-                                <>
-                                  <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">一般員工</span>
-                                  {!hasManager && (
-                                    <span className="flex items-center text-red-600 bg-red-50 px-2 py-1 rounded text-xs font-bold border border-red-100 animate-pulse">
-                                      <AlertCircle className="w-3 h-3 mr-1" /> 未指定主管
-                                    </span>
-                                  )}
-                                </>
-                              )
-                            )}
-                          </td>
-                          <td className="p-4 text-gray-600">
-                            {user.isManager ? (
-                              <span className="text-sm">{user.subordinates?.length || 0} 人</span>
-                            ) : (
-                              <span className="text-gray-300">-</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-right">
-                            <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800 mr-3">
-                              <Edit size={18} />
-                            </button>
-                            <button onClick={() => handleDelete(user.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {/* Tab Navigation */}
+            <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-sm mb-6 w-fit mx-auto md:mx-0 border border-gray-100">
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'users' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                <Users size={16} className="mr-2" /> 人員管理
+              </button>
+              <button
+                onClick={() => setActiveTab('monitoring')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'monitoring' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                <LayoutDashboard size={16} className="mr-2" /> 監控報表
+              </button>
             </div>
 
-            {/* --- Data Maintenance Section --- */}
-            <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden border border-red-100 mb-12">
-              <button
-                onClick={() => setIsMaintenanceOpen(!isMaintenanceOpen)}
-                className="w-full px-6 py-4 flex items-center justify-between bg-white hover:bg-red-50 transition"
-              >
-                <div className="flex items-center text-red-700">
-                  <Database size={20} className="mr-2" />
-                  <h2 className="text-lg font-bold">資料進階維護 (資料重置與匯入)</h2>
-                </div>
-                <div className={`transition-transform duration-300 ${isMaintenanceOpen ? 'rotate-180' : ''}`}>
-                  <RefreshCw size={18} className="text-red-400" />
-                </div>
-              </button>
-
-              {isMaintenanceOpen && (
-                <div className="p-6 bg-red-50/30 border-t border-red-100 space-y-6">
-                  <div className="flex flex-col md:flex-row gap-6">
-                    {/* Reset Left Side */}
-                    <div className="flex-1 space-y-4">
-                      <h3 className="font-bold text-gray-800 flex items-center">
-                        <AlertTriangle size={16} className="text-red-500 mr-2" /> 清空目前的資料
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        如果您希望將目前的週計畫、任務及日報全部清空並重新開始，請使用此按鈕。系統將永久刪除相關紀錄，但保留使用者清單。
-                      </p>
-                      <button
-                        onClick={handleResetClick}
-                        disabled={isProcessing}
-                        className="bg-red-100 text-red-700 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-600 hover:text-white transition font-bold disabled:opacity-50"
-                      >
-                        {isProcessing ? '處理中...' : '確認重置所有計畫資料'}
-                      </button>
+            {activeTab === 'users' ? (
+              <>
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div className="bg-gray-200 px-3 py-1 inline-block rounded-sm border border-gray-300">
+                      <span className="text-blue-700 font-bold tracking-widest text-xs">{COMPANY_NAME}</span>
                     </div>
+                    <button
+                      onClick={handleAdd}
+                      className="flex items-center bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-md font-bold"
+                    >
+                      <Plus size={18} className="mr-2" /> 新增使用者
+                    </button>
+                  </div>
 
-                    {/* Import Right Side */}
-                    <div className="flex-[2] space-y-4 border-l border-red-100 pl-6">
-                      <h3 className="font-bold text-gray-800 flex items-center">
-                        <FileJson size={16} className="text-blue-500 mr-2" /> 匯入舊有的歷史資料
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        請將歷史週計畫資料（JSON 陣列格式）貼入下方。
-                      </p>
-                      <textarea
-                        value={importJson}
-                        onChange={(e) => setImportJson(e.target.value)}
-                        placeholder='例如: [ { "userId": "...", "weekStart": "2024-03-27", "tasks": [...] }, ... ]'
-                        className="w-full h-32 border border-gray-300 rounded-lg p-3 text-xs font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                      <div className="flex justify-end">
-                        <button
-                          onClick={handleImport}
-                          disabled={isProcessing || !importJson.trim()}
-                          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-bold shadow-sm disabled:opacity-50"
-                        >
-                          {isProcessing ? '同步至資料庫中...' : '執行批次匯入'}
-                        </button>
-                      </div>
-                    </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="p-4 font-bold text-gray-700">姓名</th>
+                          <th className="p-4 font-bold text-gray-700">Email</th>
+                          <th className="p-4 font-bold text-gray-700">角色權限</th>
+                          <th className="p-4 font-bold text-gray-700">管理下屬</th>
+                          <th className="p-4 font-bold text-gray-700 text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.map(user => {
+                          // Check if this user (if they are generic staff) has a manager
+                          const hasManager = users.some(u => u.subordinates?.includes(user.id));
+                          const isGeneralStaff = !user.isManager && !user.isAdmin;
+
+                          return (
+                            <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="p-4 text-gray-800 font-medium">{user.name}</td>
+                              <td className="p-4 text-gray-600 text-sm">{user.email || '-'}</td>
+                              <td className="p-4 flex gap-2 items-center flex-wrap">
+                                {user.isAdmin && (
+                                  <span className="flex items-center bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold">
+                                    <Shield className="w-3 h-3 mr-1" /> 管理員
+                                  </span>
+                                )}
+                                {user.isManager ? (
+                                  <span className="flex items-center bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">
+                                    <Users className="w-3 h-3 mr-1" /> 主管
+                                  </span>
+                                ) : (
+                                  isGeneralStaff && (
+                                    <>
+                                      <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">一般員工</span>
+                                      {!hasManager && (
+                                        <span className="flex items-center text-red-600 bg-red-50 px-2 py-1 rounded text-xs font-bold border border-red-100 animate-pulse">
+                                          <AlertCircle className="w-3 h-3 mr-1" /> 未指定主管
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                )}
+                              </td>
+                              <td className="p-4 text-gray-600">
+                                {user.isManager ? (
+                                  <span className="text-sm">{user.subordinates?.length || 0} 人</span>
+                                ) : (
+                                  <span className="text-gray-300">-</span>
+                                )}
+                              </td>
+                              <td className="p-4 text-right">
+                                <button
+                                  onClick={() => setViewingUser(user)}
+                                  className="text-gray-500 hover:text-blue-600 mr-3 px-2 py-1 rounded hover:bg-blue-50 transition"
+                                  title="查看此人計畫"
+                                >
+                                  <Eye size={18} />
+                                </button>
+                                <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800 mr-3 px-2 py-1 rounded hover:bg-blue-50 transition">
+                                  <Edit size={18} />
+                                </button>
+                                <button onClick={() => handleDelete(user.id)} className="text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition">
+                                  <Trash2 size={18} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="space-y-6">
-            {/* --- Monitoring Dashboard --- */}
 
-            {/* Controls */}
-            <div className="bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row gap-6 items-end md:items-center justify-between">
-              <div className="flex gap-6 w-full md:w-auto">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">週計畫檢查週次 (週三)</label>
-                  <input
-                    type="date"
-                    value={selectedWeek}
-                    onChange={(e) => setSelectedWeek(e.target.value)}
-                    className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
+                {/* --- Data Maintenance Section --- */}
+                <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden border border-red-100 mb-12">
+                  <button
+                    onClick={() => setIsMaintenanceOpen(!isMaintenanceOpen)}
+                    className="w-full px-6 py-4 flex items-center justify-between bg-white hover:bg-red-50 transition"
+                  >
+                    <div className="flex items-center text-red-700">
+                      <Database size={20} className="mr-2" />
+                      <h2 className="text-lg font-bold">資料進階維護 (資料重置與匯入)</h2>
+                    </div>
+                    <div className={`transition-transform duration-300 ${isMaintenanceOpen ? 'rotate-180' : ''}`}>
+                      <RefreshCw size={18} className="text-red-400" />
+                    </div>
+                  </button>
+
+                  {isMaintenanceOpen && (
+                    <div className="p-6 bg-red-50/30 border-t border-red-100 space-y-6">
+                      <div className="flex flex-col md:flex-row gap-6">
+                        {/* Reset Left Side */}
+                        <div className="flex-1 space-y-4">
+                          <h3 className="font-bold text-gray-800 flex items-center">
+                            <AlertTriangle size={16} className="text-red-500 mr-2" /> 清空目前的資料
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            如果您希望將目前的週計畫、任務及日報全部清空並重新開始，請使用此按鈕。系統將永久刪除相關紀錄，但保留使用者清單。
+                          </p>
+                          <button
+                            onClick={handleResetClick}
+                            disabled={isProcessing}
+                            className="bg-red-100 text-red-700 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-600 hover:text-white transition font-bold disabled:opacity-50"
+                          >
+                            {isProcessing ? '處理中...' : '確認重置所有計畫資料'}
+                          </button>
+                        </div>
+
+                        {/* Import Right Side */}
+                        <div className="flex-[2] space-y-4 border-l border-red-100 pl-6">
+                          <h3 className="font-bold text-gray-800 flex items-center">
+                            <FileJson size={16} className="text-blue-500 mr-2" /> 匯入舊有的歷史資料
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            請將歷史週計畫資料（JSON 陣列格式）貼入下方。
+                          </p>
+                          <textarea
+                            value={importJson}
+                            onChange={(e) => setImportJson(e.target.value)}
+                            placeholder='例如: [ { "userId": "...", "weekStart": "2024-03-27", "tasks": [...] }, ... ]'
+                            className="w-full h-32 border border-gray-300 rounded-lg p-3 text-xs font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              onClick={handleImport}
+                              disabled={isProcessing || !importJson.trim()}
+                              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-bold shadow-sm disabled:opacity-50"
+                            >
+                              {isProcessing ? '同步至資料庫中...' : '執行批次匯入'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">日報檢查日期</label>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
+              </>
+            ) : (
+              <div className="space-y-6">
+                {/* --- Monitoring Dashboard --- */}
+
+                {/* Sub-tabs for Monitoring */}
+                <div className="flex border-b border-gray-200 mb-4">
+                  <button
+                    onClick={() => setMonitoringSubTab('weekly')}
+                    className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'weekly'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                  >
+                    週計畫監控
+                  </button>
+                  <button
+                    onClick={() => setMonitoringSubTab('daily')}
+                    className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'daily'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                  >
+                    曉三計畫監控
+                  </button>
                 </div>
-              </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={handleSendWeeklyReminder}
-                  className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition font-bold flex items-center text-sm"
-                >
-                  <Mail size={16} className="mr-2" /> 寄送週計畫催收信
-                </button>
-                <button
-                  onClick={handleSendDailyReminder}
-                  className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-lg hover:bg-orange-100 transition font-bold flex items-center text-sm"
-                >
-                  <Mail size={16} className="mr-2" /> 寄送日報催收信
-                </button>
-              </div>
-            </div>
+                {/* Controls */}
+                <div className="bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row gap-6 items-end md:items-center justify-between">
+                  <div className="flex gap-6 w-full md:w-auto">
+                    {monitoringSubTab === 'weekly' ? (
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">週計畫檢查週次 (週三)</label>
+                        <input
+                          type="date"
+                          value={selectedWeek}
+                          onChange={(e) => setSelectedWeek(e.target.value)}
+                          className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">日報檢查日期</label>
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
 
-            {/* Status Table */}
-            <div className="bg-white rounded-xl shadow-md overflow-hidden">
-              <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                <h3 className="font-bold text-gray-700 flex items-center">
-                  <Users size={18} className="mr-2 text-gray-400" /> 全元監控列表
-                </h3>
-                <span className="text-xs text-gray-400">更新於: {new Date().toLocaleTimeString()}</span>
-              </div>
-
-              {monitorLoading ? (
-                <div className="p-10 text-center text-gray-400 animate-pulse">
-                  載入中...
+                  <div className="flex gap-3">
+                    {monitoringSubTab === 'weekly' && (
+                      <button
+                        onClick={handleSendWeeklyReminder}
+                        className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition font-bold flex items-center text-sm"
+                      >
+                        <Mail size={16} className="mr-2" /> 寄送週計畫催收信
+                      </button>
+                    )}
+                    {monitoringSubTab === 'daily' && (
+                      <button
+                        onClick={handleSendDailyReminder}
+                        className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-lg hover:bg-orange-100 transition font-bold flex items-center text-sm"
+                      >
+                        <Mail size={16} className="mr-2" /> 寄送日報催收信
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-sm text-gray-500 bg-gray-50/50">
-                        <th className="p-4 font-bold">員工姓名</th>
-                        <th className="p-4 font-bold text-center">週計畫狀態 ({selectedWeek})</th>
-                        <th className="p-4 font-bold text-center">日報狀態 ({selectedDate})</th>
-                        <th className="p-4 font-bold text-right">Email</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {monitoringData.map((stat, idx) => (
-                        <tr key={stat.user.id} className="hover:bg-gray-50 transition">
-                          <td className="p-4 flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white
+
+                {/* Status Table */}
+                <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                  <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-700 flex items-center">
+                      <Users size={18} className="mr-2 text-gray-400" />
+                      {monitoringSubTab === 'weekly' ? '週計畫提交狀態' : '曉三計畫提交狀態'}
+                    </h3>
+                    <span className="text-xs text-gray-400">更新於: {new Date().toLocaleTimeString()}</span>
+                  </div>
+
+                  {monitorLoading ? (
+                    <div className="p-10 text-center text-gray-400 animate-pulse">
+                      載入中...
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="border-b border-gray-200 text-sm text-gray-500 bg-gray-50/50">
+                            <th className="p-4 font-bold">員工姓名</th>
+                            {monitoringSubTab === 'weekly' && <th className="p-4 font-bold text-center">週計畫狀態 ({selectedWeek})</th>}
+                            {monitoringSubTab === 'daily' && <th className="p-4 font-bold text-center">日報狀態 ({selectedDate})</th>}
+                            <th className="p-4 font-bold text-right">Email</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {monitoringData.map((stat, idx) => (
+                            <tr key={stat.user.id} className="hover:bg-gray-50 transition">
+                              <td className="p-4 flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white
                                   ${stat.user.isManager ? 'bg-blue-400' : 'bg-gray-400'}
                                 `}>
-                              {stat.user.name.substring(0, 1)}
-                            </div>
-                            <div>
-                              <div className="font-bold text-gray-800">{stat.user.name}</div>
-                              <div className="text-xs text-gray-400">{stat.user.isManager ? '主管' : '員工'}</div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {stat.weeklyPlanStatus === 'submitted' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
-                                <CheckCircle size={12} className="mr-1" /> 已提交
-                              </span>
-                            )}
-                            {stat.weeklyPlanStatus === 'pending' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold">
-                                <Clock size={12} className="mr-1" /> 待修改/審核
-                              </span>
-                            )}
-                            {stat.weeklyPlanStatus === 'missing' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold animate-pulse">
-                                <XCircle size={12} className="mr-1" /> 未提交
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 text-center">
-                            {stat.dailyPlanStatus === 'submitted' ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
-                                <CheckCircle size={12} className="mr-1" /> 已填寫
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 text-gray-500 text-xs font-bold">
-                                <XCircle size={12} className="mr-1" /> 未填寫
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 text-right text-gray-400 text-sm font-mono">
-                            {stat.user.email}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                  {stat.user.name.substring(0, 1)}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-gray-800">{stat.user.name}</div>
+                                  <div className="text-xs text-gray-400">{stat.user.isManager ? '主管' : '員工'}</div>
+                                </div>
+                              </td>
+                              {monitoringSubTab === 'weekly' && (
+                                <td className="p-4 text-center">
+                                  {stat.weeklyPlanStatus === 'submitted' && (
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
+                                      <CheckCircle size={12} className="mr-1" /> 已提交
+                                    </span>
+                                  )}
+                                  {stat.weeklyPlanStatus === 'pending' && (
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold">
+                                      <Clock size={12} className="mr-1" /> 待修改/審核
+                                    </span>
+                                  )}
+                                  {stat.weeklyPlanStatus === 'missing' && (
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold animate-pulse">
+                                      <XCircle size={12} className="mr-1" /> 未提交
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+                              {monitoringSubTab === 'daily' && (
+                                <td className="p-4 text-center">
+                                  {stat.dailyPlanStatus === 'submitted' ? (
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
+                                      <CheckCircle size={12} className="mr-1" /> 已填寫
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 text-gray-500 text-xs font-bold">
+                                      <XCircle size={12} className="mr-1" /> 未填寫
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+                              <td className="p-4 text-right text-gray-400 text-sm font-mono">
+                                {stat.user.email}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Edit Modal */}

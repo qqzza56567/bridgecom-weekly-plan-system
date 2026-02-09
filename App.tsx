@@ -383,6 +383,8 @@ const AppContent: React.FC = () => {
                     setWeeklyPlans(await PlanService.fetchAllPlans());
                   }}
                   onBack={() => navigate('/dashboard')}
+                  weeklyPlans={weeklyPlans}
+                  dailyPlans={dailyPlans}
                 />
               ) : <Navigate to="/dashboard" replace />}
             </RequireAuth>
