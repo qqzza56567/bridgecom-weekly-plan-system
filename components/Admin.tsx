@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Mail, Calendar, CheckCircle, XCircle, Clock, Eye, ArrowLeft } from 'lucide-react';
-import { MonitoringService, UserStatus } from '../services/MonitoringService';
-import { EmailService } from '../services/EmailService';
-import { getCurrentWeekStart } from '../utils/dateUtils';
+import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Eye } from 'lucide-react';
+
+
 import { useToast } from '../components/Toast';
 import { User, WeeklyPlanSubmission, DailyPlanSubmission } from '../types';
 import { Header } from './Header';
@@ -33,13 +32,8 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
 
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState<'users' | 'monitoring'>('users');
-  const [monitoringSubTab, setMonitoringSubTab] = useState<'weekly' | 'daily'>('weekly');
+  // --- Monitoring State (Replaced by pure Query state) ---
 
-  // --- Monitoring State ---
-  const [monitoringData, setMonitoringData] = useState<UserStatus[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekStart());
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [monitorLoading, setMonitorLoading] = useState(false);
 
   // --- Individual Query State (New) ---
   const today = new Date();
@@ -47,38 +41,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
   const [queryMonth, setQueryMonth] = useState<string>(currentMonthStr);
   const [queryUser, setQueryUser] = useState<User | null>(null);
 
-  React.useEffect(() => {
-    if (activeTab === 'monitoring' && monitoringSubTab !== 'individual') {
-      loadMonitoringData();
-    }
-  }, [activeTab, monitoringSubTab, selectedWeek, selectedDate]);
 
-  const loadMonitoringData = async () => {
-    setMonitorLoading(true);
-    try {
-      const data = await MonitoringService.getMonitoringData(selectedWeek, selectedDate);
-      setMonitoringData(data);
-    } catch (e) {
-      console.error(e);
-      toast.error("讀取監控數據失敗");
-    } finally {
-      setMonitorLoading(false);
-    }
-  };
-
-  const handleSendWeeklyReminder = () => {
-    const missing = monitoringData.filter(d => d.weeklyPlanStatus === 'missing').map(d => d.user.email);
-    if (!missing.length) return toast.info("目前沒有人缺交週計畫");
-    EmailService.sendWeeklyReminder(missing, selectedWeek);
-    toast.success(`已開啟郵件軟體，收件者共 ${missing.length} 人`);
-  };
-
-  const handleSendDailyReminder = () => {
-    const missing = monitoringData.filter(d => d.dailyPlanStatus === 'missing').map(d => d.user.email);
-    if (!missing.length) return toast.info("目前沒有人缺交日報");
-    EmailService.sendDailyReminder(missing, selectedDate);
-    toast.success(`已開啟郵件軟體，收件者共 ${missing.length} 人`);
-  };
 
   const handleEdit = (user: User) => {
     setCurrentUser({ ...user });
@@ -221,7 +184,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                 onClick={() => setActiveTab('monitoring')}
                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'monitoring' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
               >
-                <LayoutDashboard size={16} className="mr-2" /> 監控報表
+                <LayoutDashboard size={16} className="mr-2" /> 計畫查詢
               </button>
             </div>
 
@@ -380,228 +343,63 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
               </>
             ) : (
               <div className="space-y-6">
-                {/* --- Monitoring Dashboard --- */}
-
-                {/* Sub-tabs for Monitoring */}
-                <div className="flex border-b border-gray-200 mb-4">
-                  <button
-                    onClick={() => setMonitoringSubTab('weekly')}
-                    className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'weekly'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                  >
-                    週計畫監控
-                  </button>
-                  <button
-                    onClick={() => setMonitoringSubTab('daily')}
-                    className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'daily'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                  >
-                    曉三計畫監控
-                  </button>
-                  <button
-                    onClick={() => setMonitoringSubTab('individual')}
-                    className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'individual'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                  >
-                    個人計畫查詢
-                  </button>
-                </div>
-
-                {/* Controls */}
-                {monitoringSubTab !== 'individual' && (
-                  <div className="bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row gap-6 items-end md:items-center justify-between">
-                    <div className="flex gap-6 w-full md:w-auto">
-                      {monitoringSubTab === 'weekly' ? (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-400 mb-1">週計畫檢查週次 (週三)</label>
-                          <input
-                            type="date"
-                            value={selectedWeek}
-                            onChange={(e) => setSelectedWeek(e.target.value)}
-                            className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-400 mb-1">日報檢查日期</label>
-                          <input
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-3">
-                      {monitoringSubTab === 'weekly' && (
-                        <button
-                          onClick={handleSendWeeklyReminder}
-                          className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-100 transition font-bold flex items-center text-sm"
+                {/* --- Individual Query Section (Default and Only View for Plan Query) --- */}
+                <div className="space-y-6">
+                  {/* Controls Bar */}
+                  <div className="bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row gap-6 items-end justify-between border-l-4 border-blue-500">
+                    <div className="flex flex-col md:flex-row gap-6 w-full">
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-400 mb-1">選擇員工</label>
+                        <select
+                          value={queryUser?.id || ''}
+                          onChange={(e) => {
+                            const u = users.find(u => u.id === e.target.value);
+                            setQueryUser(u || null);
+                          }}
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                         >
-                          <Mail size={16} className="mr-2" /> 寄送週計畫催收信
-                        </button>
-                      )}
-                      {monitoringSubTab === 'daily' && (
-                        <button
-                          onClick={handleSendDailyReminder}
-                          className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-lg hover:bg-orange-100 transition font-bold flex items-center text-sm"
-                        >
-                          <Mail size={16} className="mr-2" /> 寄送日報催收信
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Status Table */}
-                {monitoringSubTab !== 'individual' ? (
-                  <div className="bg-white rounded-xl shadow-md overflow-hidden">
-                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                      <h3 className="font-bold text-gray-700 flex items-center">
-                        <Users size={18} className="mr-2 text-gray-400" />
-                        {monitoringSubTab === 'weekly' ? '週計畫提交狀態' : '曉三計畫提交狀態'}
-                      </h3>
-                      <span className="text-xs text-gray-400">更新於: {new Date().toLocaleTimeString()}</span>
-                    </div>
-
-                    {monitorLoading ? (
-                      <div className="p-10 text-center text-gray-400 animate-pulse">
-                        載入中...
+                          <option value="">-- 請選擇員工 --</option>
+                          {users.map(u => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
                       </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-b border-gray-200 text-sm text-gray-500 bg-gray-50/50">
-                              <th className="p-4 font-bold">員工姓名</th>
-                              {monitoringSubTab === 'weekly' && <th className="p-4 font-bold text-center">週計畫狀態 ({selectedWeek})</th>}
-                              {monitoringSubTab === 'daily' && <th className="p-4 font-bold text-center">日報狀態 ({selectedDate})</th>}
-                              <th className="p-4 font-bold text-right">Email</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {monitoringData.map((stat, idx) => (
-                              <tr key={stat.user.id} className="hover:bg-gray-50 transition">
-                                <td className="p-4 flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white
-                                    ${stat.user.isManager ? 'bg-blue-400' : 'bg-gray-400'}
-                                  `}>
-                                    {stat.user.name.substring(0, 1)}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-gray-800">{stat.user.name}</div>
-                                    <div className="text-xs text-gray-400">{stat.user.isManager ? '主管' : '員工'}</div>
-                                  </div>
-                                </td>
-                                {monitoringSubTab === 'weekly' && (
-                                  <td className="p-4 text-center">
-                                    {stat.weeklyPlanStatus === 'submitted' && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
-                                        <CheckCircle size={12} className="mr-1" /> 已提交
-                                      </span>
-                                    )}
-                                    {stat.weeklyPlanStatus === 'pending' && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded bg-orange-100 text-orange-700 text-xs font-bold">
-                                        <Clock size={12} className="mr-1" /> 待修改/審核
-                                      </span>
-                                    )}
-                                    {stat.weeklyPlanStatus === 'missing' && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold animate-pulse">
-                                        <XCircle size={12} className="mr-1" /> 未提交
-                                      </span>
-                                    )}
-                                  </td>
-                                )}
-                                {monitoringSubTab === 'daily' && (
-                                  <td className="p-4 text-center">
-                                    {stat.dailyPlanStatus === 'submitted' ? (
-                                      <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">
-                                        <CheckCircle size={12} className="mr-1" /> 已填寫
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 text-gray-500 text-xs font-bold">
-                                        <XCircle size={12} className="mr-1" /> 未填寫
-                                      </span>
-                                    )}
-                                  </td>
-                                )}
-                                <td className="p-4 text-right text-gray-400 text-sm font-mono">
-                                  {stat.user.email}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  // --- Individual Query Section ---
-                  <div className="space-y-6">
-                    {/* Controls Bar */}
-                    <div className="bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row gap-6 items-end justify-between border-l-4 border-blue-500">
-                      <div className="flex flex-col md:flex-row gap-6 w-full">
-                        <div className="flex-1">
-                          <label className="block text-xs font-bold text-gray-400 mb-1">選擇員工</label>
-                          <select
-                            value={queryUser?.id || ''}
-                            onChange={(e) => {
-                              const u = users.find(u => u.id === e.target.value);
-                              setQueryUser(u || null);
-                            }}
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                          >
-                            <option value="">-- 請選擇員工 --</option>
-                            {users.map(u => (
-                              <option key={u.id} value={u.id}>{u.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-bold text-gray-400 mb-1">選擇月份</label>
-                          <input
-                            type="month"
-                            value={queryMonth}
-                            onChange={(e) => setQueryMonth(e.target.value)}
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Results Area */}
-                    {queryUser ? (
-                      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                        <div className="bg-blue-50/50 p-3 border-b border-gray-200 text-center">
-                          <span className="font-bold text-blue-800 text-sm">
-                            正在檢視: {queryUser.name} ({queryMonth})
-                          </span>
-                        </div>
-                        <Tracking
-                          user={queryUser}
-                          weeklyPlans={filteredQueryWeeklyPlans}
-                          dailyPlans={filteredQueryDailyPlans}
-                          onBack={() => { /* Do nothing here as it behaves as a sub-component */ }}
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-400 mb-1">選擇月份</label>
+                        <input
+                          type="month"
+                          value={queryMonth}
+                          onChange={(e) => setQueryMonth(e.target.value)}
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </div>
-                    ) : (
-                      <div className="bg-white p-12 rounded-xl shadow-sm border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400">
-                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                          <Eye size={32} className="text-gray-300" />
-                        </div>
-                        <p className="font-bold">請選擇一位員工以查看詳細計畫</p>
-                      </div>
-                    )}
+                    </div>
                   </div>
-                )}
+
+                  {/* Results Area */}
+                  {queryUser ? (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                      <div className="bg-blue-50/50 p-3 border-b border-gray-200 text-center">
+                        <span className="font-bold text-blue-800 text-sm">
+                          正在檢視: {queryUser.name} ({queryMonth})
+                        </span>
+                      </div>
+                      <Tracking
+                        user={queryUser}
+                        weeklyPlans={filteredQueryWeeklyPlans}
+                        dailyPlans={filteredQueryDailyPlans}
+                        onBack={() => { /* Do nothing here as it behaves as a sub-component */ }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-white p-12 rounded-xl shadow-sm border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400">
+                      <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                        <Eye size={32} className="text-gray-300" />
+                      </div>
+                      <p className="font-bold">請選擇一位員工以查看詳細計畫</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </>
