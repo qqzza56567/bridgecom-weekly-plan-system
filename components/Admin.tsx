@@ -181,6 +181,8 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
             weeklyPlans={weeklyPlans}
             dailyPlans={dailyPlans}
             onBack={() => setViewingUser(null)}
+            allUsers={users}
+            onSwitchUser={setViewingUser}
           />
         ) : (
           <>
@@ -364,8 +366,8 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                   <button
                     onClick={() => setMonitoringSubTab('weekly')}
                     className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'weekly'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
                       }`}
                   >
                     週計畫監控
@@ -373,8 +375,8 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                   <button
                     onClick={() => setMonitoringSubTab('daily')}
                     className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${monitoringSubTab === 'daily'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
                       }`}
                   >
                     曉三計畫監控

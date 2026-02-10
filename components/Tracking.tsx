@@ -3,13 +3,16 @@ import { User, WeeklyPlanSubmission, DailyPlanSubmission } from '../types';
 import { Header } from './Header';
 import { PlanStats } from './PlanStats'; // Import the new stats component
 import * as XLSX from 'xlsx';
-import { FileSpreadsheet, BarChart3, List, CalendarCheck } from 'lucide-react';
+import { FileSpreadsheet, BarChart3, List, CalendarCheck, CalendarDays, User as UserIcon, ChevronDown } from 'lucide-react';
 
 interface TrackingProps {
     user: User;
     weeklyPlans: WeeklyPlanSubmission[];
     dailyPlans: DailyPlanSubmission[];
     onBack: () => void;
+    // Optional props for Admin View (Switching Users)
+    allUsers?: User[];
+    onSwitchUser?: (user: User) => void;
 }
 
 const TaskSummaryCell: React.FC<{ tasks: any[] }> = ({ tasks }) => {
@@ -118,19 +121,41 @@ const TaskSummaryCell: React.FC<{ tasks: any[] }> = ({ tasks }) => {
     );
 };
 
-export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlans, onBack }) => {
+export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlans, onBack, allUsers, onSwitchUser }) => {
     // Add 'stats' to the activeTab state
     const [activeTab, setActiveTab] = useState<'stats' | 'weekly' | 'daily'>('stats');
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 5;
 
-    // Filter data for current user
-    const myWeeklyPlans = useMemo(() => weeklyPlans.filter(p => p.userId === user.id), [weeklyPlans, user.id]);
-    const myDailyPlans = useMemo(() => dailyPlans.filter(p => p.userId === user.id), [dailyPlans, user.id]);
+    // --- Month Selection State ---
+    const today = new Date();
+    const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr);
+
+    // --- Filter Logic ---
+    const filteredWeeklyPlans = useMemo(() => {
+        return weeklyPlans.filter(p => {
+            if (p.userId !== user.id) return false;
+            // Check if week starts within selected month OR if submittedAt is in selected month
+            // Usually WeekStart is the most consistent
+            return p.weekStart.startsWith(selectedMonth);
+        });
+    }, [weeklyPlans, user.id, selectedMonth]);
+
+    const filteredDailyPlans = useMemo(() => {
+        return dailyPlans.filter(p => {
+            if (p.userId !== user.id) return false;
+            return p.date.startsWith(selectedMonth);
+        });
+    }, [dailyPlans, user.id, selectedMonth]);
+
+    // Use filtering for stats as well?
+    // User requested "Month View", so stats should likely reflect that month too.
+    const plansForStats = filteredWeeklyPlans;
 
     // Pagination Logic
     // Only applies to list views (weekly, daily)
-    const currentDataList = activeTab === 'weekly' ? myWeeklyPlans : (activeTab === 'daily' ? myDailyPlans : []);
+    const currentDataList = activeTab === 'weekly' ? filteredWeeklyPlans : (activeTab === 'daily' ? filteredDailyPlans : []);
     const totalPages = Math.ceil(currentDataList.length / pageSize);
     const paginatedData = useMemo(() => {
         if (activeTab === 'stats') return [];
@@ -148,7 +173,7 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
         const wb = XLSX.utils.book_new();
 
         // 1. Weekly Sheet (Formatting tasks as string for readability in cell)
-        const weeklyData = myWeeklyPlans.map(item => {
+        const weeklyData = filteredWeeklyPlans.map(item => {
             const tasksStr = item.tasks.map(t =>
                 `[${t.category}] ${t.name} (預估:${t.hours}hr/實際:${t.actualHours || 0}hr) - 執行:${t.progress || 0}% - 成果:${t.outcome}`
             ).join('\n');
@@ -174,7 +199,7 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
         XLSX.utils.book_append_sheet(wb, wsWeekly, "週計畫");
 
         // 2. Daily Sheet
-        const dailyData = myDailyPlans.map(item => ({
+        const dailyData = filteredDailyPlans.map(item => ({
             "日期": item.date,
             "第一件事": item.goals[0] || '',
             "第二件事": item.goals[1] || '',
@@ -193,8 +218,58 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
         <div className="min-h-screen bg-[#eef5ff] p-4 md:p-8">
             <div className="max-w-6xl mx-auto">
                 <Header title="成果追蹤" subtitle="計畫統計與歷史查詢" onBack={onBack} />
-
                 <div className="bg-white rounded-xl shadow-md p-6 min-h-[600px] flex flex-col">
+
+                    {/* --- Controls Bar: Month Picker & User Switcher (If Admin) --- */}
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <div className="flex items-center gap-4 w-full md:w-auto">
+                            {/* Month Picker */}
+                            <div className="flex items-center bg-white border border-blue-200 rounded-lg px-3 py-2 shadow-sm">
+                                <CalendarDays className="w-5 h-5 text-blue-500 mr-2" />
+                                <span className="text-sm font-bold text-gray-500 mr-2">選擇月份:</span>
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => {
+                                        setSelectedMonth(e.target.value);
+                                        setCurrentPage(1); // Reset page on filter change
+                                    }}
+                                    className="outline-none text-gray-700 font-bold bg-transparent cursor-pointer"
+                                />
+                            </div>
+
+                            {/* User Selector (Admin Only) */}
+                            {allUsers && onSwitchUser && (
+                                <div className="relative group">
+                                    <div className="flex items-center bg-white border border-purple-200 rounded-lg px-3 py-2 shadow-sm cursor-pointer hover:border-purple-400 transition">
+                                        <UserIcon className="w-5 h-5 text-purple-500 mr-2" />
+                                        <span className="text-sm font-bold text-gray-700 mr-2">{user.name}</span>
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                    {/* Dropdown Menu */}
+                                    <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-20 hidden group-hover:block max-h-60 overflow-y-auto">
+                                        {allUsers.map(u => (
+                                            <button
+                                                key={u.id}
+                                                onClick={() => onSwitchUser(u)}
+                                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center justify-between ${user.id === u.id ? 'font-bold text-blue-600 bg-blue-50' : 'text-gray-700'}`}
+                                            >
+                                                <span>{u.name}</span>
+                                                {user.id === u.id && <span className="text-blue-500">✓</span>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="text-right hidden md:block">
+                            <span className="text-xs text-gray-400 font-mono">
+                                {selectedMonth} 資料檢視中
+                            </span>
+                        </div>
+                    </div>
+
                     <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                         <div className="flex gap-2 p-1 bg-gray-100 rounded-lg self-start md:self-auto">
                             <button
@@ -241,7 +316,7 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
 
                     <div className="flex-grow">
                         {activeTab === 'stats' && (
-                            <PlanStats plans={myWeeklyPlans} />
+                            <PlanStats plans={plansForStats} />
                         )}
 
                         {activeTab === 'weekly' && (
