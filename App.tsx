@@ -117,6 +117,64 @@ const AppContent: React.FC = () => {
     const name = s.user.user_metadata?.full_name || email.split('@')[0] || '使用者';
 
     console.log(`[Bootstrap] Starting for user: ${userId}`);
+
+    // --- MOCK DATA MODE FOR DEV LOGIN ---
+    if (userId === 'a0000009-0000-0000-0000-000000000009') {
+      console.log("[Bootstrap] ⚠️ MOCK DATA MODE ACTIVATED");
+      const mockKen: User = {
+        id: userId,
+        email: 'ken@bridgecom.com.tw',
+        name: 'Ken (Dev)',
+        isManager: true,
+        isAdmin: true,
+        subordinates: []
+      };
+
+      const mockUsers: User[] = [
+        mockKen,
+        { id: 'u2', email: 'alice@test.com', name: 'Alice (Sales)', isManager: false, isAdmin: false, subordinates: [] },
+        { id: 'u3', email: 'bob@test.com', name: 'Bob (Engineer)', isManager: false, isAdmin: false, subordinates: [] },
+      ];
+
+      // Mock Weekly Plans
+      const mockWeeklyPlans: WeeklyPlanSubmission[] = [
+        {
+          id: 'wp1', userId: 'u2', userName: 'Alice', weekRange: '2025-W05', weekStart: '2025-01-29', status: 'approved',
+          submittedAt: '2025-01-30T10:00:00Z', totalHours: 40, keyRatio: 80,
+          tasks: [
+            { id: 't1', category: '關鍵職責' as any, priority: '高' as any, name: 'Client Visit', hours: 20, actualHours: 20, progress: 100, outcome: 'Closed deal' },
+            { id: 't2', category: '其他事項' as any, priority: '中' as any, name: 'Report', hours: 20, actualHours: 18, progress: 90, outcome: 'Drafted' }
+          ]
+        },
+        {
+          id: 'wp2', userId: 'u2', userName: 'Alice', weekRange: '2025-W04', weekStart: '2025-01-22', status: 'approved',
+          submittedAt: '2025-01-23T10:00:00Z', totalHours: 42, keyRatio: 85, tasks: []
+        },
+        {
+          id: 'wp3', userId: 'u3', userName: 'Bob', weekRange: '2025-W05', weekStart: '2025-01-29', status: 'pending',
+          submittedAt: '2025-01-31T09:00:00Z', totalHours: 45, keyRatio: 90,
+          tasks: [
+            { id: 't3', category: '關鍵職責' as any, priority: '高' as any, name: 'Frontend Refactor', hours: 40, actualHours: 30, progress: 75, outcome: 'Ongoing' }
+          ]
+        }
+      ];
+
+      // Mock Daily Plans
+      const mockDailyPlans: DailyPlanSubmission[] = [
+        { id: 'dp1', userId: 'u2', userName: 'Alice', date: '2025-02-03', status: 'Valid', goals: ['Call client', 'Email boss', 'Meeting'] },
+        { id: 'dp2', userId: 'u3', userName: 'Bob', date: '2025-02-03', status: 'Valid', goals: ['Code review', 'Fix bugs', 'Deploy'] }
+      ];
+
+      setCurrentUser(mockKen);
+      setUsers(mockUsers);
+      setWeeklyPlans(mockWeeklyPlans);
+      setDailyPlans(mockDailyPlans);
+      setIsLoading(false);
+      toast.success("已進入本地開發模擬模式 (Mock Data Mode)");
+      return;
+    }
+    // ------------------------------------
+
     try {
       // 1. Fetch Profile (Manual Direct Query to bypass UserService deadlock)
       const { data: profiles, error: pError } = await supabase
@@ -291,7 +349,19 @@ const AppContent: React.FC = () => {
   return (
     <React.Suspense fallback={<LoadingScreen message="模組加載中" />}>
       <Routes>
-        <Route path="/" element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/" element={session ? <Navigate to="/dashboard" replace /> : <Login onDevLogin={() => {
+          const kenId = 'a0000009-0000-0000-0000-000000000009';
+          const fakeSession = {
+            user: {
+              id: kenId,
+              email: 'ken@bridgecom.com.tw',
+              user_metadata: { full_name: 'Ken' }
+            }
+          };
+          setSession(fakeSession);
+          setIsLoading(true);
+          bootstrapSession(fakeSession);
+        }} />} />
         <Route
           path="/dashboard"
           element={

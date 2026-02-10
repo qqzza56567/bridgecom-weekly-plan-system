@@ -13,6 +13,7 @@ interface TrackingProps {
     // Optional props for Admin View (Switching Users)
     allUsers?: User[];
     onSwitchUser?: (user: User) => void;
+    hideHeader?: boolean; // New prop to hide header
 }
 
 const TaskSummaryCell: React.FC<{ tasks: any[] }> = ({ tasks }) => {
@@ -121,7 +122,7 @@ const TaskSummaryCell: React.FC<{ tasks: any[] }> = ({ tasks }) => {
     );
 };
 
-export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlans, onBack }) => {
+export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlans, onBack, hideHeader = false }) => {
     // Add 'stats' to the activeTab state
     const [activeTab, setActiveTab] = useState<'stats' | 'weekly' | 'daily'>('stats');
     const [currentPage, setCurrentPage] = useState(1);
@@ -193,17 +194,17 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
     };
 
     return (
-        <div className="min-h-screen bg-[#eef5ff] p-4 md:p-8">
+        <div className={`min-h-screen bg-[#eef5ff] p-4 md:p-8 ${hideHeader ? '!p-0 !bg-transparent !min-h-0' : ''}`}>
             <div className="max-w-6xl mx-auto">
-                <Header title="成果追蹤" subtitle="計畫統計與歷史查詢" onBack={onBack} />
-                <div className="bg-white rounded-xl shadow-md p-6 min-h-[600px] flex flex-col">
+                {!hideHeader && <Header title="成果追蹤" subtitle="計畫統計與歷史查詢" onBack={onBack} />}
+                <div className={`bg-white rounded-xl shadow-md p-6 min-h-[600px] flex flex-col ${hideHeader ? '!shadow-none !border-none' : ''}`}>
                     <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                        <div className="flex gap-2 p-1 bg-gray-100 rounded-lg self-start md:self-auto">
+                        <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl self-start md:self-auto border border-gray-200">
                             <button
                                 onClick={() => handleTabChange('stats')}
-                                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'stats'
+                                className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'stats'
                                     ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-700'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
                                     }`}
                             >
                                 <BarChart3 className="w-4 h-4 mr-2" />
@@ -211,9 +212,9 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
                             </button>
                             <button
                                 onClick={() => handleTabChange('weekly')}
-                                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'weekly'
+                                className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'weekly'
                                     ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-700'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
                                     }`}
                             >
                                 <List className="w-4 h-4 mr-2" />
@@ -221,9 +222,9 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
                             </button>
                             <button
                                 onClick={() => handleTabChange('daily')}
-                                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'daily'
+                                className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'daily'
                                     ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-700'
+                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
                                     }`}
                             >
                                 <CalendarCheck className="w-4 h-4 mr-2" />

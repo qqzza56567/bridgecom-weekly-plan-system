@@ -371,6 +371,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                         weeklyPlans={filteredQueryWeeklyPlans}
                         dailyPlans={filteredQueryDailyPlans}
                         onBack={() => { /* Do nothing here as it behaves as a sub-component */ }}
+                        hideHeader={true}
                       />
                     </div>
                   ) : (

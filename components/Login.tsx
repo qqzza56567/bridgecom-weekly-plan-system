@@ -5,7 +5,11 @@ import { LogIn, Loader2, Mail } from 'lucide-react';
 
 import { useToast } from '../components/Toast';
 
-export const Login: React.FC = () => {
+interface LoginProps {
+    onDevLogin?: () => void;
+}
+
+export const Login: React.FC<LoginProps> = ({ onDevLogin }) => {
     const [loading, setLoading] = useState(false);
     const toast = useToast();
 
@@ -75,6 +79,17 @@ export const Login: React.FC = () => {
                                 </>
                             )}
                         </button>
+
+                        {/* DEV ONLY BUTTON */}
+                        {import.meta.env.DEV && onDevLogin && (
+                            <button
+                                onClick={onDevLogin}
+                                className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white py-3 rounded-2xl font-bold hover:bg-purple-700 transition-all shadow-md"
+                            >
+                                <Loader2 className="w-4 h-4 hidden" />
+                                🛠️ 本地開發測試登入 (Dev Only)
+                            </button>
+                        )}
 
                         <div className="relative">
                             <div className="absolute inset-0 flex items-center">
