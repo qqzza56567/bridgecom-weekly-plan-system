@@ -125,7 +125,7 @@ export const Tracking: React.FC<TrackingProps> = ({ user, weeklyPlans, dailyPlan
     // Add 'stats' to the activeTab state
     const [activeTab, setActiveTab] = useState<'stats' | 'weekly' | 'daily'>('stats');
     const [currentPage, setCurrentPage] = useState(1);
-    const pageSize = 5;
+    const pageSize = 10;
 
     // Filter data for current user (This should ideally be done by parent if passing specific plans, but keeping basic check is fine)
     const myWeeklyPlans = useMemo(() => weeklyPlans.filter(p => p.userId === user.id), [weeklyPlans, user.id]);

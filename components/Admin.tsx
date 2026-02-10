@@ -36,9 +36,6 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
 
 
   // --- Individual Query State (New) ---
-  const today = new Date();
-  const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  const [queryMonth, setQueryMonth] = useState<string>(currentMonthStr);
   const [queryUser, setQueryUser] = useState<User | null>(null);
 
 
@@ -143,20 +140,14 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
 
   // Filtered Data for Individual Query
   const filteredQueryWeeklyPlans = React.useMemo(() => {
-    if (!queryUser || !queryMonth) return [];
-    return weeklyPlans.filter(p => {
-      if (p.userId !== queryUser.id) return false;
-      return p.weekStart.startsWith(queryMonth);
-    });
-  }, [weeklyPlans, queryUser, queryMonth]);
+    if (!queryUser) return [];
+    return weeklyPlans.filter(p => p.userId === queryUser.id);
+  }, [weeklyPlans, queryUser]);
 
   const filteredQueryDailyPlans = React.useMemo(() => {
-    if (!queryUser || !queryMonth) return [];
-    return dailyPlans.filter(p => {
-      if (p.userId !== queryUser.id) return false;
-      return p.date.startsWith(queryMonth);
-    });
-  }, [dailyPlans, queryUser, queryMonth]);
+    if (!queryUser) return [];
+    return dailyPlans.filter(p => p.userId === queryUser.id);
+  }, [dailyPlans, queryUser]);
 
   return (
     <div className="min-h-screen bg-[#eef5ff] p-4 md:p-8">
@@ -364,15 +355,6 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                           ))}
                         </select>
                       </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-bold text-gray-400 mb-1">選擇月份</label>
-                        <input
-                          type="month"
-                          value={queryMonth}
-                          onChange={(e) => setQueryMonth(e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                      </div>
                     </div>
                   </div>
 
@@ -381,7 +363,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                     <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                       <div className="bg-blue-50/50 p-3 border-b border-gray-200 text-center">
                         <span className="font-bold text-blue-800 text-sm">
-                          正在檢視: {queryUser.name} ({queryMonth})
+                          正在檢視: {queryUser.name} (全部歷史資料)
                         </span>
                       </div>
                       <Tracking
