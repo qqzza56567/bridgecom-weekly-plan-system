@@ -1,17 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, WeeklyTask, TaskCategory, TaskPriority, WeeklyPlanSubmission, LastWeekTaskReview, TaskStatus } from '../types';
-import { Plus, X, AlertCircle, History, CheckCircle, Copy, Clock, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { User, WeeklyTask, TaskCategory, TaskPriority, WeeklyPlanSubmission } from '../types';
+import { Plus, X, AlertCircle, CheckCircle, AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { COMPANY_NAME } from '../constants';
 import { getPlanningWeekStart, getPreviousWeekStart, getWeekRangeString, toLocalISOString, daysBetweenLocal } from '../utils/dateUtils';
 import { Header } from './Header';
 import { generateId } from '../utils/uuid';
 import { useToast } from '../components/Toast';
+import { validateWeeklyTask, validatePlanContent, WeeklyTaskValidationResult, PlanValidationResult } from '../services/geminiService';
 
 interface WeeklyPlanProps {
     user: User;
     initialData?: WeeklyPlanSubmission; // If provided, we are in Edit mode
     targetWeekStart?: string; // If provided, we are creating a plan for this specific week
-    allPlans?: WeeklyPlanSubmission[]; // For finding previous week's plan
+    allPlans?: WeeklyPlanSubmission[]; // For finding duplicates
     onSubmit: (plan: WeeklyPlanSubmission) => void;
     onBack: () => void;
 }
@@ -38,12 +39,96 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
     const [isSaving, setIsSaving] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
 
+    // AI Validation State
+    const [validatingTaskId, setValidatingTaskId] = useState<string | null>(null);
+    const [validationResults, setValidationResults] = useState<Record<string, WeeklyTaskValidationResult>>({});
+
+    // Batch Validation State
+    // const [showValidationModal, setShowValidationModal] = useState(false); // Removed for inline style
+    const [isValidating, setIsValidating] = useState(false);
+    const [batchValidationResults, setBatchValidationResults] = useState<PlanValidationResult | null>(null);
+
+    const handleBatchValidate = async () => {
+        setIsValidating(true);
+        try {
+            const results = await validatePlanContent(tasks.map(t => ({ id: t.id, name: t.name, outcome: t.outcome })));
+            setBatchValidationResults(results);
+
+            if (results.isValid) {
+                // Keep the results visible so user can see yellow warnings
+                const hasWarnings = Object.values(results.results).some(r => r.status === 'warning');
+
+                if (hasWarnings) {
+                    toast.success("驗證通過，但有部分優化建議 (黃燈)");
+                } else {
+                    toast.success("驗證通過 (綠燈)，計畫內容完整！");
+                }
+
+                // Determine next step: standard validation or direct submit
+                if (!isTotalValid || !isRatioValid) {
+                    setShowRemarkModal(true);
+                } else {
+                    handleFinalSubmit();
+                }
+            } else {
+                toast.error("部分內容未達標 (紅燈)，請修正後提交");
+
+                // Scroll to top or first invalid item to ensure user sees errors
+                const firstInvalidId = tasks.find(t => results.results[t.id] && results.results[t.id].status === 'critical')?.id;
+                if (firstInvalidId) {
+                    const element = document.getElementById(`task-row-${firstInvalidId}`);
+                    if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Batch validation error", error);
+            toast.error("AI 驗證服務連線失敗，請稍後再試");
+        } finally {
+            setIsValidating(false);
+        }
+    };
+
+    const applyAiSuggestion = (taskId: string, field: 'name' | 'outcome', suggestion: string) => {
+        // Simple regex to extract the suggestion from text like "建議改為'XXX'" if possible, 
+        // or just use the full text if it's short. 
+        // For now, let's just assume the user will copy/paste or we just replace.
+        // Actually, let's try to be smart: remove "建議改為" prefix if present.
+        let cleanSuggestion = suggestion.replace(/建議改為['"「](.*?)['"」]/, '$1');
+        // If regex didn't match (plain text), uses original.
+        if (cleanSuggestion === suggestion) {
+            cleanSuggestion = suggestion.replace(/建議改為[:：]?\s*/, '');
+        }
+
+        updateTask(taskId, field, cleanSuggestion);
+
+        // Update local validation state to "valid" for this field to give immediate feedback
+        if (batchValidationResults) {
+            setBatchValidationResults(prev => {
+                if (!prev) return null;
+                const newResults = { ...prev.results };
+                if (newResults[taskId]) {
+                    newResults[taskId] = {
+                        ...newResults[taskId],
+                        [field === 'name' ? 'nameFeedback' : 'outcomeFeedback']: undefined
+                    };
+                    // Check if task is now fully valid
+                    if (!newResults[taskId].nameFeedback && !newResults[taskId].outcomeFeedback) {
+                        newResults[taskId].isValid = true;
+                    }
+                }
+                return { ...prev, results: newResults };
+            });
+        }
+    };
+
     // --- Date Logic (Wednesday Based) ---
     const { weekStart, weekRange } = useMemo(() => {
         if (initialData) {
             return { weekStart: initialData.weekStart, weekRange: initialData.weekRange };
         }
-        // If targetWeekStart is passed (from dropdown creation or catch-up), use it.
+        // If targetWeekStart is passed (from dropdown creation), use it.
         // Otherwise fall back to getPlanningWeekStart (default logic)
         const ws = targetWeekStart || getPlanningWeekStart();
         const wr = getWeekRangeString(ws);
@@ -63,106 +148,7 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
         }
     }, [initialData]);
 
-    // --- Last Week Review State ---
-    // This holds the "Self-Review" data for the PREVIOUS week.
-    // If we are editing an existing plan that ALREADY has a review attached, load it.
-    // Otherwise, find the previous plan and initialize from it.
-    const [reviewTasks, setReviewTasks] = useState<LastWeekTaskReview[]>([]);
-    const [lastPlanWeekStart, setLastPlanWeekStart] = useState<string | null>(null);
 
-    const lastPlan = useMemo(() => {
-        // Find closest previous plan
-        const sortedHistory = [...allPlans]
-            .filter(p => p.weekStart < weekStart)
-            .sort((a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime());
-        return sortedHistory[0];
-    }, [allPlans, weekStart]);
-
-    useEffect(() => {
-        if (initialData && initialData.lastWeekReview) {
-            // Case A: Editing a plan that already has review data saved
-            setReviewTasks(initialData.lastWeekReview.tasks);
-            setLastPlanWeekStart(initialData.lastWeekReview.weekStart);
-        } else if (lastPlan) {
-            // Case B: Creating new plan or first time editing without saved review
-            // Initialize with data from the actual last plan
-            const initReviews: LastWeekTaskReview[] = lastPlan.tasks.map(t => ({
-                taskId: t.id,
-                name: t.name,
-                category: t.category,
-                outcome: t.outcome,
-                hours: t.hours,
-                actualHours: t.actualHours || 0,
-                progress: t.progress || 0,
-                notDoneReason: t.notDoneReason || ''
-            }));
-            setReviewTasks(initReviews);
-            setLastPlanWeekStart(lastPlan.weekStart);
-        } else {
-            setReviewTasks([]);
-            setLastPlanWeekStart(null);
-        }
-    }, [initialData, lastPlan]);
-
-
-
-    // --- Review Handlers ---
-    const updateReview = (taskId: string, field: keyof LastWeekTaskReview, value: any) => {
-        setReviewTasks(prev => prev.map(t => {
-            if (t.taskId === taskId) {
-                return { ...t, [field]: value };
-            }
-            return t;
-        }));
-    };
-
-    const handleSyncLastWeek = () => {
-        if (!lastPlan) {
-            // Should not happen if button is shown, but safety first
-            return;
-        }
-
-        if (!window.confirm("確定要重新同步上週計畫嗎？\n\n警告：這將會覆蓋您目前在「上週檢討」欄位中填寫的所有進度與實際時數，並載入上週計畫的最新版本。")) {
-            return;
-        }
-
-        const freshReviews: LastWeekTaskReview[] = lastPlan.tasks.map(t => ({
-            taskId: t.id,
-            name: t.name,
-            category: t.category,
-            outcome: t.outcome,
-            hours: t.hours,
-            actualHours: 0,   // Reset or keep? Usually sync means "I want the new structure", but maybe we should try to preserve? 
-            // User request implies "I want to sync content". 
-            // Resetting actuals/progress is safer to avoid mismatch, but let's stick to a clean slate from the source plan as defaults.
-            progress: 0,
-            notDoneReason: ''
-        }));
-
-        setReviewTasks(freshReviews);
-        toast.success("已同步上週最新計畫內容");
-    };
-
-    const handleCopyTaskToCurrent = (rTask: LastWeekTaskReview) => {
-        setTasks(prev => [
-            ...prev,
-            {
-                id: generateId(),
-                category: asTaskCategory(rTask.category),
-                priority: TaskPriority.MEDIUM, // Default to medium on copy
-                name: rTask.name,
-                outcome: rTask.outcome || '',
-                hours: 0, // Reset hours for re-estimation
-                progress: 0, // Reset progress
-            }
-        ]);
-        // Visual feedback could be added here
-    };
-
-    const asTaskCategory = (c?: string): TaskCategory => {
-        if (c === TaskCategory.KEY_RESPONSIBILITY) return TaskCategory.KEY_RESPONSIBILITY;
-        return TaskCategory.OTHER; // Fallback
-    };
 
     // --- Task Management Functions ---
     const addTask = () => {
@@ -224,20 +210,17 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
             return;
         }
 
-        if (!isTotalValid || !isRatioValid) {
-            setShowRemarkModal(true);
-        } else {
-            handleFinalSubmit();
+        // Check for empty names first
+        if (tasks.some(t => !t.name.trim())) {
+            setValidationError("請確保所有本週任務都有填寫名稱");
+            return;
         }
+
+        // Trigger AI Batch Validation
+        handleBatchValidate();
     };
 
     const handleFinalSubmit = async () => {
-        // Prepare Last Week Review Section safely
-        const lastWeekReviewSection = (lastPlanWeekStart && reviewTasks.length > 0) ? {
-            weekStart: lastPlanWeekStart,
-            tasks: reviewTasks
-        } : undefined;
-
         const submission: WeeklyPlanSubmission = {
             id: initialData ? initialData.id : generateId(),
             userId: user.id,
@@ -252,8 +235,6 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
             keyRatio: parseFloat(keyRatio.toFixed(1)),
             tasks: tasks,
             remark: remark || undefined,
-            // Attach the review data
-            lastWeekReview: lastWeekReviewSection
         };
 
         setIsSaving(true);
@@ -330,137 +311,14 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
     }
 
     // --- Constants for Slider Colors ---
-    const getSliderColor = (val: number) => {
-        if (val >= 100) return 'accent-green-500';
-        if (val >= 80) return 'accent-blue-500';
-        if (val >= 50) return 'accent-yellow-500';
-        return 'accent-orange-500';
-    };
+    // --- Constants for Slider Colors ---
 
     return (
         <div className="min-h-screen bg-[#eef5ff] p-4 md:p-4 font-sans">
             <div className="max-w-6xl mx-auto space-y-6">
                 <Header title={getPageTitle()} subtitle={`計畫區間：${weekRange}`} onBack={onBack} />
 
-                {/* --- SECTION 1: LAST WEEK REVIEW (SELF CLICK) --- */}
-                {reviewTasks.length > 0 && (
-                    <div className="bg-orange-50 rounded-xl shadow-md border border-orange-200 overflow-hidden animate-fadeIn">
-                        <div className="p-4 md:p-6 border-b border-orange-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-orange-50 to-white">
-                            <div className="flex items-center gap-3">
-                                <Clock className="w-6 h-6 text-orange-600 flex-shrink-0" />
-                                <div>
-                                    <h2 className="text-lg font-bold text-orange-900">上週計畫自我檢視</h2>
-                                    <p className="text-sm text-orange-700 opacity-80 leading-tight">請更新上週任務的實際執行狀況，並可將未完成或例行任務複製到本週。</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleSyncLastWeek}
-                                className="flex items-center justify-center px-4 py-2 bg-white border border-orange-300 text-orange-700 rounded-lg shadow-sm hover:bg-orange-100 transition text-sm font-bold whitespace-nowrap group"
-                                title="重新從上週計畫載入最新資料 (將覆蓋目前填寫的檢討)"
-                            >
-                                <RefreshCw className="w-4 h-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
-                                同步上週資料
-                            </button>
-                        </div>
-                        <div className="overflow-x-auto -mx-2 md:mx-0">
-                            <table className="w-full text-left text-sm min-w-[700px] md:min-w-[800px]">
-                                <thead className="bg-orange-100/50 text-orange-900 text-sm">
-                                    <tr>
-                                        <th className="p-4 w-24">類別</th>
-                                        <th className="p-4 w-1/4">任務名稱 / 預期成果</th>
-                                        <th className="p-4 w-20 text-center">預估</th>
-                                        <th className="p-4 w-24 text-center">實際時數</th>
-                                        <th className="p-4 w-1/3">執行進度</th>
-                                        <th className="p-4 w-32">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-orange-100 bg-white">
-                                    {reviewTasks.map((t) => (
-                                        <tr key={t.taskId} className="hover:bg-orange-50/30 transition-colors">
-                                            <td className="p-4 align-top">
-                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${t.category === '關鍵職責' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
-                                                    {t.category || '其他'}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 align-top">
-                                                <div className="font-bold text-gray-800 mb-1">{t.name}</div>
-                                                <div className="text-xs text-gray-400">{t.outcome || '-'}</div>
-                                            </td>
-                                            <td className="p-4 text-center align-top text-gray-500 font-medium">
-                                                {t.hours}h
-                                            </td>
-                                            <td className="p-4 align-top">
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    max="168"
-                                                    step="0.5"
-                                                    className="w-full border border-orange-200 rounded-md p-1.5 text-center text-gray-800 font-bold focus:ring-2 focus:ring-orange-500 outline-none"
-                                                    value={t.actualHours || ''}
-                                                    onChange={(e) => {
-                                                        let val = parseFloat(e.target.value);
-                                                        if (isNaN(val)) val = 0;
-                                                        if (val < 0) val = 0;
-                                                        if (val > 168) val = 168;
-                                                        updateReview(t.taskId, 'actualHours', val);
-                                                    }}
-                                                />
-                                            </td>
-                                            <td className="p-4 align-top min-w-[300px]">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    {[0, 50, 80, 100].map((step) => (
-                                                        <button
-                                                            key={step}
-                                                            onClick={() => updateReview(t.taskId, 'progress', step)}
-                                                            className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all border ${t.progress === step
-                                                                ? step === 100
-                                                                    ? 'bg-green-100 text-green-700 border-green-200 shadow-sm'
-                                                                    : 'bg-orange-100 text-orange-700 border-orange-200 shadow-sm'
-                                                                : 'bg-white text-gray-400 border-gray-100 hover:bg-gray-50'
-                                                                }`}
-                                                        >
-                                                            {step}%
-                                                        </button>
-                                                    ))}
-                                                </div>
 
-                                                {/* Progress Bar Visualization */}
-                                                <div className="w-full h-1.5 bg-gray-100 rounded-full mb-3 overflow-hidden">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all duration-500 ${t.progress === 100 ? 'bg-green-500' : 'bg-orange-400'}`}
-                                                        style={{ width: `${t.progress}%` }}
-                                                    ></div>
-                                                </div>
-
-                                                {t.progress < 100 && (
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            placeholder="說明未完成原因..."
-                                                            className="w-full pl-2 pr-2 py-1.5 text-xs border border-orange-200 rounded-md focus:ring-2 focus:ring-orange-100 focus:border-orange-400 outline-none text-gray-700 placeholder-gray-400 bg-orange-50/30 transition-all"
-                                                            value={t.notDoneReason || ''}
-                                                            onChange={(e) => updateReview(t.taskId, 'notDoneReason', e.target.value)}
-                                                        />
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="p-4 align-top text-center">
-                                                <button
-                                                    onClick={() => handleCopyTaskToCurrent(t)}
-                                                    className="flex items-center justify-center px-3 py-2 bg-white border border-gray-200 text-gray-600 text-xs font-bold rounded-lg shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all active:scale-95 group"
-                                                    title="複製任務到本週"
-                                                >
-                                                    <Copy className="w-3.5 h-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
-                                                    複製
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
 
 
                 {/* --- SECTION 2: THIS WEEK STATS --- */}
@@ -511,89 +369,130 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                     </div>
 
                     <div className="space-y-6">
-                        {tasks.map((task, index) => (
-                            <div key={task.id} className="relative bg-white border border-gray-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group">
-                                <div className="absolute -left-3 top-5 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-sm z-10">
-                                    {index + 1}
-                                </div>
-                                <div className="pl-4">
-                                    <div className="flex flex-col md:flex-row gap-4 mb-4">
-                                        <div className="w-full md:w-1/4 space-y-4">
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">類別</label>
-                                                <select
-                                                    value={task.category}
-                                                    onChange={(e) => updateTask(task.id, 'category', e.target.value)}
-                                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                                                >
-                                                    {Object.values(TaskCategory).map(c => <option key={c} value={c}>{c}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">優先級</label>
-                                                <select
-                                                    value={task.priority}
-                                                    onChange={(e) => updateTask(task.id, 'priority', e.target.value)}
-                                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                                                >
-                                                    {Object.values(TaskPriority).map(p => <option key={p} value={p}>{p}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">時數</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    max="168"
-                                                    step="0.5"
-                                                    value={task.hours === 0 ? '' : task.hours}
-                                                    onChange={(e) => {
-                                                        let val = parseFloat(e.target.value);
-                                                        if (isNaN(val) || e.target.value === '') val = 0;
-                                                        if (val < 0) val = 0;
-                                                        if (val > 168) val = 168;
-                                                        updateTask(task.id, 'hours', val);
-                                                    }}
-                                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    placeholder="0.0"
-                                                />
-                                            </div>
-                                        </div>
+                        {tasks.map((task, index) => {
+                            const validationResult = batchValidationResults?.results[task.id];
+                            const isCritical = validationResult?.status === 'critical';
+                            const isWarning = validationResult?.status === 'warning';
 
-                                        <div className="flex-1 space-y-4">
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">任務名稱</label>
-                                                <input
-                                                    type="text"
-                                                    value={task.name}
-                                                    onChange={(e) => updateTask(task.id, 'name', e.target.value)}
-                                                    maxLength={50}
-                                                    placeholder="請輸入任務名稱"
-                                                    className="w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-gray-800 font-medium placeholder-gray-300 transition-colors hover:border-blue-300"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">預期成果</label>
-                                                <textarea
-                                                    value={task.outcome}
-                                                    onChange={(e) => updateTask(task.id, 'outcome', e.target.value)}
-                                                    maxLength={100}
-                                                    placeholder="具體、可衡量的成果描述..."
-                                                    rows={2}
-                                                    className="w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-gray-600 text-sm resize-none placeholder-gray-300 transition-colors hover:border-blue-300"
-                                                />
-                                            </div>
-                                        </div>
+                            let borderClass = 'border-gray-100';
+                            if (isCritical) borderClass = 'border-red-300 ring-2 ring-red-100';
+                            else if (isWarning) borderClass = 'border-orange-300 ring-2 ring-orange-100';
+
+                            return (
+                                <div key={task.id} id={`task-row-${task.id}`} className={`relative bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group ${borderClass}`}>
+                                    <div className="absolute -left-3 top-5 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-sm z-10">
+                                        {index + 1}
                                     </div>
-                                </div>
+                                    <div className="pl-4">
+                                        <div className="flex flex-col md:flex-row gap-4 mb-4">
+                                            <div className="w-full md:w-1/4 space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">類別</label>
+                                                    <select
+                                                        value={task.category}
+                                                        onChange={(e) => updateTask(task.id, 'category', e.target.value)}
+                                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    >
+                                                        {Object.values(TaskCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">優先級</label>
+                                                    <select
+                                                        value={task.priority}
+                                                        onChange={(e) => updateTask(task.id, 'priority', e.target.value)}
+                                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    >
+                                                        {Object.values(TaskPriority).map(p => <option key={p} value={p}>{p}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">時數</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="168"
+                                                        step="0.5"
+                                                        value={task.hours === 0 ? '' : task.hours}
+                                                        onChange={(e) => {
+                                                            let val = parseFloat(e.target.value);
+                                                            if (isNaN(val) || e.target.value === '') val = 0;
+                                                            if (val < 0) val = 0;
+                                                            if (val > 168) val = 168;
+                                                            updateTask(task.id, 'hours', val);
+                                                        }}
+                                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        placeholder="0.0"
+                                                    />
+                                                </div>
+                                            </div>
 
-                                {tasks.length > 1 && (
-                                    <button onClick={() => removeTask(task.id)} className="absolute top-2 right-2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                                        <X size={18} />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
+                                            <div className="flex-1 space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">任務名稱</label>
+                                                    <input
+                                                        type="text"
+                                                        value={task.name}
+                                                        onChange={(e) => updateTask(task.id, 'name', e.target.value)}
+                                                        maxLength={50}
+                                                        placeholder="請輸入任務名稱"
+                                                        className={`w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-gray-800 font-medium placeholder-gray-300 transition-colors hover:border-blue-300 ${isCritical && validationResult?.nameFeedback ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
+                                                    />
+                                                    {validationResult?.nameFeedback && (
+                                                        <div className={`mt-2 text-sm p-3 rounded-lg border animate-fadeIn ${isCritical ? 'text-red-600 bg-red-50 border-red-100' : 'text-orange-700 bg-orange-50 border-orange-100'}`}>
+                                                            <div className="font-bold flex items-center mb-1">
+                                                                <AlertCircle className="w-4 h-4 mr-1.5" />
+                                                                {isCritical ? '請修正以下問題：' : '優化建議：'}
+                                                            </div>
+                                                            <p className="mb-2">{validationResult.nameFeedback}</p>
+                                                            <button
+                                                                onClick={() => applyAiSuggestion(task.id, 'name', validationResult.nameFeedback!)}
+                                                                className={`text-xs font-bold px-3 py-1.5 rounded-md transition-colors ${isCritical ? 'bg-red-100 hover:bg-red-200 text-red-700' : 'bg-orange-100 hover:bg-orange-200 text-orange-800'}`}
+                                                            >
+                                                                套用建議
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">預期成果</label>
+                                                    <textarea
+                                                        value={task.outcome}
+                                                        onChange={(e) => updateTask(task.id, 'outcome', e.target.value)}
+                                                        maxLength={100}
+                                                        placeholder="具體、可衡量的成果描述..."
+                                                        rows={2}
+                                                        className={`w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-gray-600 text-sm resize-none placeholder-gray-300 transition-colors hover:border-blue-300 ${isCritical && validationResult?.outcomeFeedback ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
+                                                    />
+                                                    {validationResult?.outcomeFeedback && (
+                                                        <div className={`mt-2 text-sm p-3 rounded-lg border animate-fadeIn ${isCritical ? 'text-red-600 bg-red-50 border-red-100' : 'text-orange-700 bg-orange-50 border-orange-100'}`}>
+                                                            <div className="font-bold flex items-center mb-1">
+                                                                <AlertCircle className="w-4 h-4 mr-1.5" />
+                                                                {isCritical ? '請修正以下問題：' : '優化建議：'}
+                                                            </div>
+                                                            <p className="mb-2">{validationResult.outcomeFeedback}</p>
+                                                            <button
+                                                                onClick={() => applyAiSuggestion(task.id, 'outcome', validationResult.outcomeFeedback!)}
+                                                                className={`text-xs font-bold px-3 py-1.5 rounded-md transition-colors ${isCritical ? 'bg-red-100 hover:bg-red-200 text-red-700' : 'bg-orange-100 hover:bg-orange-200 text-orange-800'}`}
+                                                            >
+                                                                套用建議
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
+                                    {tasks.length > 1 && (
+                                        <button onClick={() => removeTask(task.id)} className="absolute top-2 right-2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                                            <X size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
                     <div className="mt-8">
@@ -607,8 +506,8 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                             <button onClick={addTask} disabled={isSaving} className="flex-1 py-3 border-2 border-dashed border-blue-200 text-blue-500 rounded-xl font-bold hover:bg-blue-50 hover:border-blue-300 transition flex items-center justify-center">
                                 <Plus size={20} className="mr-2" /> 新增任務
                             </button>
-                            <button onClick={handlePreSubmit} disabled={isSaving} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg hover:shadow-xl transition transform active:scale-95 flex items-center justify-center disabled:opacity-70">
-                                {isSaving ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> 處理中...</> : initialData ? '保存並提交' : '提交週計畫'}
+                            <button onClick={handlePreSubmit} disabled={isSaving || isValidating} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg hover:shadow-xl transition transform active:scale-95 flex items-center justify-center disabled:opacity-70">
+                                {isSaving || isValidating ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {isValidating ? 'AI 檢查中...' : '處理中...'}</> : initialData ? '保存並提交' : '提交週計畫'}
                             </button>
                         </div>
                     </div>
@@ -657,6 +556,8 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                             </div>
                         </div>
                     )}
+
+                    {/* AI Batch Validation Modal - REMOVED for Inline Style */}
                 </div>
             </div>
         </div>

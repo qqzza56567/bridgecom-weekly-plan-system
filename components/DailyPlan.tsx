@@ -96,7 +96,8 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
         const newGoals = [...goals];
         newGoals[index] = value;
         setGoals(newGoals);
-        if (validationResults) setValidationResults(null);
+
+        // Removed setValidationResults(null) to keep feedback visible while editing
 
         // Auto-hide incomplete reason if now we have 3 filled
         const filledCount = newGoals.filter(g => g.trim()).length;

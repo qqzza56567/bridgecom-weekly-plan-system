@@ -128,7 +128,7 @@ export const PlanStats: React.FC<PlanStatsProps> = ({ plans }) => {
                 <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center">
                         <TrendingUp className="w-5 h-5 mr-2 text-blue-500" />
-                        任務達成率趨勢
+                        關鍵職責率趨勢
                     </h3>
                     <div className="h-72">
                         <ResponsiveContainer width="100%" height="100%">
@@ -142,20 +142,12 @@ export const PlanStats: React.FC<PlanStatsProps> = ({ plans }) => {
                                 <Legend />
                                 <Line
                                     type="monotone"
-                                    dataKey="avgProgress"
-                                    name="平均完成度"
-                                    stroke="#3B82F6"
-                                    strokeWidth={3}
-                                    dot={{ r: 4, strokeWidth: 2 }}
-                                    activeDot={{ r: 6 }}
-                                />
-                                <Line
-                                    type="monotone"
                                     dataKey="keyResponsibilityRate"
                                     name="關鍵職責率"
                                     stroke="#EF4444"
-                                    strokeWidth={2}
-                                    strokeDasharray="5 5"
+                                    strokeWidth={3}
+                                    dot={{ r: 4, strokeWidth: 2 }}
+                                    activeDot={{ r: 6 }}
                                 />
                             </LineChart>
                         </ResponsiveContainer>
@@ -233,22 +225,28 @@ export const PlanStats: React.FC<PlanStatsProps> = ({ plans }) => {
                 <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow lg:col-span-1">
                     <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center">
                         <CheckCircle className="w-5 h-5 mr-2 text-purple-500" />
-                        任務數量趨勢
+                        平均完成度趨勢
                     </h3>
                     <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                            <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                                 <XAxis dataKey="periodLabel" tick={{ fontSize: 12 }} />
-                                <YAxis tick={{ fontSize: 12 }} />
+                                <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 12 }} />
                                 <Tooltip
-                                    cursor={{ fill: '#f9fafb' }}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 />
                                 <Legend />
-                                <Bar dataKey="totalTasks" name="總任務數" fill="#8B5CF6" radius={[4, 4, 0, 0]} barSize={20} />
-                                <Bar dataKey="completedTasks" name="完成數" fill="#10B981" radius={[4, 4, 0, 0]} barSize={20} />
-                            </BarChart>
+                                <Line
+                                    type="monotone"
+                                    dataKey="avgProgress"
+                                    name="平均完成度"
+                                    stroke="#8B5CF6"
+                                    strokeWidth={3}
+                                    dot={{ r: 4, strokeWidth: 2 }}
+                                    activeDot={{ r: 6 }}
+                                />
+                            </LineChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
