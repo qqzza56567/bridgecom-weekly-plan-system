@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, WeeklyTask, TaskCategory, TaskPriority, WeeklyPlanSubmission } from '../types';
-import { Plus, X, AlertCircle, CheckCircle, AlertTriangle, Loader2, Sparkles } from 'lucide-react';
+import { Plus, X, AlertCircle, CheckCircle, AlertTriangle, Loader2, Sparkles, CopyCheck } from 'lucide-react';
 import { COMPANY_NAME } from '../constants';
 import { getPlanningWeekStart, getPreviousWeekStart, getWeekRangeString, toLocalISOString, daysBetweenLocal } from '../utils/dateUtils';
 import { Header } from './Header';
@@ -134,6 +134,46 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
         const wr = getWeekRangeString(ws);
         return { weekStart: ws, weekRange: wr };
     }, [initialData, targetWeekStart]);
+
+    // --- Copy Last Week Plan Logic ---
+    const lastWeekPlan = useMemo(() => {
+        const previousWs = getPreviousWeekStart(weekStart);
+        return allPlans.find(p => p.weekStart === previousWs && p.userId === user.id);
+    }, [allPlans, weekStart, user.id]);
+
+    const handleCopyLastWeek = () => {
+        if (!lastWeekPlan || !lastWeekPlan.tasks || lastWeekPlan.tasks.length === 0) {
+            toast.error("找不到上週的計畫紀錄", { icon: "❌" });
+            return;
+        }
+
+        // Check if current form is empty or user is currently editing it
+        const hasEditedTasks = tasks.length > 1 || tasks[0].name.trim() !== '' || tasks[0].outcome.trim() !== '' || tasks[0].hours > 0;
+
+        if (hasEditedTasks) {
+            if (!window.confirm("匯入上週計畫將會覆蓋您目前已輸入的內容，確定要繼續嗎？")) {
+                return;
+            }
+        }
+
+        const copiedTasks: WeeklyTask[] = lastWeekPlan.tasks.map(t => ({
+            id: generateId(), // Always generate a new ID down to the task level
+            name: t.name || '',
+            category: t.category,
+            outcome: t.outcome || '',
+            hours: t.hours || 0,
+            priority: t.priority || TaskPriority.MEDIUM,
+            // Reset fields meant for tracking/review
+            actualHours: 0,
+            progress: 0,
+            status: undefined,
+            notDoneReason: undefined,
+            lastTouchedAt: toLocalISOString(new Date())
+        }));
+
+        setTasks(copiedTasks);
+        toast.success(`✅ 已成功帶入上週 ${copiedTasks.length} 項任務，請依本週實際狀況微調`);
+    };
 
     // --- Initialization Effect (Current Plan) ---
     useEffect(() => {
@@ -361,11 +401,27 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
 
                 {/* --- SECTION 3: THIS WEEK TASKS --- */}
                 <div className="bg-white rounded-xl shadow-md p-6">
-                    <div className="flex justify-between items-center mb-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                         <h2 className="text-lg font-bold text-gray-800 flex items-center">
                             <span className="w-1.5 h-6 bg-blue-600 rounded-full mr-3"></span>
                             本週任務清單
                         </h2>
+
+                        {/* Copy Last Week Plan Button */}
+                        {!initialData && (
+                            <button
+                                onClick={handleCopyLastWeek}
+                                disabled={!lastWeekPlan}
+                                className={`flex items-center text-sm font-bold px-4 py-2 rounded-lg transition-all border
+                                    ${lastWeekPlan
+                                        ? 'bg-white border-blue-200 text-blue-600 hover:bg-blue-50 shadow-sm hover:shadow'
+                                        : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                title={lastWeekPlan ? "自動匯入您上週的計畫內容，以供快速修改" : "找不到您上週的計畫"}
+                            >
+                                <CopyCheck size={16} className="mr-2" />
+                                複製上週任務
+                            </button>
+                        )}
                     </div>
 
                     <div className="space-y-6">

@@ -36,7 +36,8 @@ function convertDbPlanToAppPlan(dbPlan: DbWeeklyPlan, dbTasks: DbPlanTask[] | un
             notDoneReason: t.not_done_reason || '',
             status: t.status as any,
             lastTouchedAt: t.last_touched_at || ''
-        }))
+        })),
+        aiReport: dbPlan.ai_report || undefined
     };
 }
 
@@ -103,7 +104,8 @@ export const PlanService = {
                 total_hours: Number(plan.totalHours) || 0,
                 key_ratio: Number(plan.keyRatio) || 0,
                 remark: plan.remark || null,
-                last_week_review: plan.lastWeekReview || null
+                last_week_review: plan.lastWeekReview || null,
+                ai_report: plan.aiReport || null
             };
 
             const { error: planError } = await supabase
@@ -202,6 +204,20 @@ export const PlanService = {
                 review_comment: comment,
                 last_week_review: lastWeekReview, // Update the JSON column
                 updated_at: new Date().toISOString()
+            })
+            .eq('id', planId);
+
+        if (error) throw error;
+    },
+
+    /**
+     * Save AI Execution report to db
+     */
+    async saveAiReport(planId: string, result: any): Promise<void> {
+        const { error } = await supabase
+            .from('weekly_plans')
+            .update({
+                ai_report: result
             })
             .eq('id', planId);
 

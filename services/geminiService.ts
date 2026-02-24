@@ -321,3 +321,113 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
     return { isValid: true, results };
   }
 };
+
+export interface WeeklyReportData {
+  statusTheme: 'red' | 'yellow' | 'green';
+  statusText: string;
+  totalTasks: number;
+  unplannedTasks: number;
+  unplannedRatio: number;
+  alignedTasks: number;
+  ai: {
+    critical: string | null;
+    suggestion: string;
+    highlight: string | null;
+  }
+}
+
+export const generateWeeklyReport = async (
+  userName: string,
+  userRole: string,
+  weeklyTasks: { name: string; outcome: string; priority: string }[],
+  dailyPlans: { date: string; goals: string[] }[]
+): Promise<WeeklyReportData | null> => {
+  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+
+  if (isPlaceholder) {
+    console.warn("Gemini API Key is placeholder. Mode: MOCK REPORT");
+    return {
+      statusTheme: 'yellow',
+      statusText: '偏離注意 (65% 對齊) [MOCK]',
+      totalTasks: 15,
+      unplannedTasks: 5,
+      unplannedRatio: 33,
+      alignedTasks: 10,
+      ai: {
+        critical: '週四與週五出現大量未在週計畫內的臨時任務。',
+        suggestion: '建議與該同仁進行 1on1，確認是否有過度塞單的狀況。',
+        highlight: '週三的任務執行效率極高。'
+      }
+    };
+  }
+
+  const modelId = "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          statusTheme: { type: SchemaType.STRING, enum: ["red", "yellow", "green"] },
+          statusText: { type: SchemaType.STRING },
+          totalTasks: { type: SchemaType.INTEGER },
+          unplannedTasks: { type: SchemaType.INTEGER },
+          unplannedRatio: { type: SchemaType.INTEGER },
+          alignedTasks: { type: SchemaType.INTEGER },
+          ai: {
+            type: SchemaType.OBJECT,
+            properties: {
+              critical: { type: SchemaType.STRING, nullable: true },
+              suggestion: { type: SchemaType.STRING },
+              highlight: { type: SchemaType.STRING, nullable: true }
+            },
+            required: ["suggestion"]
+          }
+        },
+        required: ["statusTheme", "statusText", "totalTasks", "unplannedTasks", "unplannedRatio", "alignedTasks", "ai"]
+      }
+    }
+  });
+
+  const prompt = `
+    你是一位專業的人力資源與績效管理顧問。
+    請分析員工「${userName}」(${userRole}) 過去一週的「每日曉三計畫 (Daily Goals)」與「原定週計畫 (Weekly Plan)」的關聯度，並產生結構化的診斷報告。
+
+    【原定週計畫任務】：
+    ${JSON.stringify(weeklyTasks, null, 2)}
+
+    【每日實際填寫的曉三計畫】：
+    ${JSON.stringify(dailyPlans, null, 2)}
+
+    【分析步驟與定義】：
+    1. 計算本週實際填寫的每日總任務數 (totalTasks)。
+    2. 比對每日任務與週計畫任務。判斷哪些每日任務是「有對齊原計畫」的(alignedTasks)，哪些是「臨時插單/未在原計畫內」的(unplannedTasks)。
+    3. 計算 unplannedRatio = (unplannedTasks / totalTasks) * 100，四捨五入到整數。如果 totalTasks 是 0，則數值為 0。
+    4. 依據 unplannedRatio 及質性分析給予狀態燈號 (statusTheme):
+       - 🟢 green: 高度對齊 (unplannedRatio < 20%)
+       - 🟡 yellow: 偏離注意 (unplannedRatio 介於 20% ~ 50%)
+       - 🔴 red: 嚴重偏離 (unplannedRatio > 50%) 或 有明顯的方向錯誤。
+    5. 產生對應長度的 statusText，例如「高度對齊 (92% 對齊)」、「嚴重偏離 (40% 對齊)」。
+    6. 提供具體的 AI 洞察 (ai 物件):
+       - critical: 如果有嚴重的偏誤、大量插單、或連續幾天沒推進核心任務，請具體指出是哪一天、什麼任務造成的。若無嚴重問題傳回 null。
+       - suggestion: 給主管的一段溝通建議 (例如該不該找員工 1on1，或該如何讚賞)。
+       - highlight: 表現優異的亮點 (例如某天專注完成了重要計畫)。若無明顯亮點傳回 null。
+
+    請使用繁體中文 (台灣) 回覆，文字風格要專業且直白。
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    if (!text) throw new Error("No response from AI");
+
+    return JSON.parse(text) as WeeklyReportData;
+  } catch (error) {
+    console.error("Gemini weekly report error:", error);
+    return null;
+  }
+};

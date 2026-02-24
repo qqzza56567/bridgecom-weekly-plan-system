@@ -19,6 +19,7 @@ export interface DbWeeklyPlan {
     key_ratio: number;
     remark: string | null;
     last_week_review: any; // JSONB
+    ai_report: any; // JSONB
 }
 
 export interface DbPlanTask {

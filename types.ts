@@ -1,3 +1,5 @@
+import { WeeklyReportData } from './services/geminiService';
+
 export interface User {
   id: string;
   name: string;
@@ -75,6 +77,9 @@ export interface WeeklyPlanSubmission {
   lastWeekReview?: LastWeekReviewSection;
 
   remark?: string; // Reason for not meeting criteria
+
+  // AI-generated execution report
+  aiReport?: WeeklyReportData;
 }
 
 export interface DailyPlanSubmission {
