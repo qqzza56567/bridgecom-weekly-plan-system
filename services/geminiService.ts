@@ -1,10 +1,10 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
 // WARNING: Frontend API keys are exposed to the client. 
 // For production, it is strongly recommended to move this logic to a Supabase Edge Function 
 // or a proxy server to keep your API key secure.
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+const genAI = new GoogleGenerativeAI(apiKey);
 
 export interface SmartValidationResult {
   index: number;
@@ -27,6 +27,26 @@ export const validateSmartGoals = async (goals: string[]): Promise<SmartValidati
   }
 
   const modelId = "gemini-2.0-flash"; // 升級為 2.0-flash 版本
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: {
+      temperature: 0.0, // 零隨機性，確保結果一致
+      topP: 0.95,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: SchemaType.ARRAY,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            index: { type: SchemaType.INTEGER },
+            isValid: { type: SchemaType.BOOLEAN },
+            feedback: { type: SchemaType.STRING }
+          },
+          required: ["index", "isValid", "feedback"]
+        }
+      }
+    }
+  });
 
   const prompt = `
     你是一位嚴格且實用的生產力教練。請分析這三個「每日目標」是否符合具體工作產出的標準。
@@ -48,7 +68,7 @@ export const validateSmartGoals = async (goals: string[]): Promise<SmartValidati
     1. ${goals[0]}
     2. ${goals[1]}
     3. ${goals[2]}
-
+    
     請回傳一個 JSON 陣列，包含 isValid (布林值) 和 feedback (短建議)。
     若通過，feedback 請給予簡單的肯定；
     若不通過，請提供**具體的修改建議**（例如：將「寫程式」改為「完成首頁切版」）。
@@ -56,29 +76,10 @@ export const validateSmartGoals = async (goals: string[]): Promise<SmartValidati
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        temperature: 0.0, // 零隨機性，確保結果一致
-        topP: 0.95,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              index: { type: Type.INTEGER },
-              isValid: { type: Type.BOOLEAN },
-              feedback: { type: Type.STRING }
-            },
-            required: ["index", "isValid", "feedback"]
-          }
-        }
-      }
-    });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const text = response.text;
     if (!text) return [];
 
     return JSON.parse(text) as SmartValidationResult[];
@@ -116,6 +117,22 @@ export const validateWeeklyTask = async (taskId: string, name: string, outcome: 
   }
 
   const modelId = "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: {
+      temperature: 0.0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          status: { type: SchemaType.STRING, enum: ["valid", "critical"] },
+          nameFeedback: { type: SchemaType.STRING, nullable: true },
+          outcomeFeedback: { type: SchemaType.STRING, nullable: true }
+        },
+        required: ["status"]
+      }
+    }
+  });
 
   const prompt = `
     你是一位專業的績效管理教練。請驗證以下週計畫任務，並根據 **S.M.A.R.T. 原則** (Specific & Measurable) 與**字數規範**給予紅綠燈評價。
@@ -148,34 +165,19 @@ export const validateWeeklyTask = async (taskId: string, name: string, outcome: 
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        temperature: 0.0,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            status: { type: Type.STRING, enum: ["valid", "critical"] },
-            nameFeedback: { type: Type.STRING, nullable: true },
-            outcomeFeedback: { type: Type.STRING, nullable: true }
-          },
-          required: ["status"]
-        }
-      }
-    });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    const result = JSON.parse(text);
+    const parsedResult = JSON.parse(text);
     return {
       taskId,
-      isValid: result.status !== 'critical',
-      status: result.status,
-      nameFeedback: result.nameFeedback || undefined,
-      outcomeFeedback: result.outcomeFeedback || undefined
+      isValid: parsedResult.status !== 'critical',
+      status: parsedResult.status,
+      nameFeedback: parsedResult.nameFeedback || undefined,
+      outcomeFeedback: parsedResult.outcomeFeedback || undefined
     };
 
   } catch (error) {
@@ -214,6 +216,32 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
   }
 
   const modelId = "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: {
+      temperature: 0.0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          results: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                id: { type: SchemaType.STRING },
+                status: { type: SchemaType.STRING, enum: ["valid", "critical"] },
+                nameFeedback: { type: SchemaType.STRING, nullable: true },
+                outcomeFeedback: { type: SchemaType.STRING, nullable: true }
+              },
+              required: ["id", "status"]
+            }
+          }
+        },
+        required: ["results"]
+      }
+    }
+  });
 
   const tasksJson = JSON.stringify(tasks.map(t => ({ id: t.id, name: t.name, outcome: t.outcome })));
 
@@ -221,7 +249,7 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
     你是一位**嚴格但有建設性**的績效教練。請審查以下週計畫任務，並根據 **S.M.A.R.T. 原則** (Specific & Measurable) 與**字數規範**給予紅綠燈評價。
     
     **審核標準 (Pass/Fail System)**：
-
+    
     1. 🔴 **紅燈 (Critical) - 不通過**
        - **結構錯誤**：完全不符合「動詞 + 名詞」結構，或內容過於模糊（如「開會」、「處理」、「研究」）。
        - **預期成果錯誤**：❌ **必須是具體的交付物或狀態**。若寫「無」、「做完」、「努力中」、「如期完成」，直接紅燈。
@@ -229,19 +257,19 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
          - **條件 A (太短)**：字數少於 5 個字（如「寫報告」），直接紅燈。
          - **條件 B (缺乏數據)**：缺乏具體數據或對象細節（如「拜訪客戶」），直接紅燈。
        - **結果**：\`status: 'critical'\`。
-
+    
     2. 🟢 **綠燈 (Valid) - 通過**
        - **條件**：具體、可衡量，且字數充足 (>5 字) 能表達完整語意。
        - **範例**：✅「撰寫 Q3 結案報告」、✅「拜訪 A 客戶並確認需求」、✅「產出 API v1.0 文件」。
        - **結果**：\`status: 'valid'\`。
-
+    
     **最高原則 (Self-Consistency)**：
     - 若判定 **Critical**，請確保你提供的建議內容**具體且可行**。
     - **一致性**：若內容處於邊緣地帶但符合基本定義，請傾向給予 **Green (Valid)** 以避免反覆修改。
-
+    
     待審查任務列表 (JSON):
     ${tasksJson}
-
+    
     請回傳一個 JSON 物件，格式如下：
     {
       "results": [
@@ -258,35 +286,10 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        temperature: 0.0,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            results: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  status: { type: Type.STRING, enum: ["valid", "critical"] },
-                  nameFeedback: { type: Type.STRING, nullable: true },
-                  outcomeFeedback: { type: Type.STRING, nullable: true }
-                },
-                required: ["id", "status"]
-              }
-            }
-          },
-          required: ["results"]
-        }
-      }
-    });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const text = response.text;
     if (!text) throw new Error("No response from AI");
 
     const parsed = JSON.parse(text);
