@@ -60,20 +60,31 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
     const [reports, setReports] = useState<Record<string, WeeklyReportData>>({});
     const [isGeneratingReport, setIsGeneratingReport] = useState<Record<string, boolean>>({});
 
-    const handleGenerateReport = async (subordinateId: string) => {
-        setIsGeneratingReport(prev => ({ ...prev, [subordinateId]: true }));
-        try {
-            const userPlans = relevantPlans.filter(p => p.userId === subordinateId).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
-            const latestPlan = userPlans[0];
-            if (!latestPlan) {
-                // error("找不到該員工的週計畫");
-                setIsGeneratingReport(prev => ({ ...prev, [subordinateId]: false }));
-                return;
-            }
+    // Week selection for UI
+    const availableWeeks = useMemo(() => {
+        const weeksMap = new Map<string, string>(); // weekStart -> weekRange
+        relevantPlans.forEach(p => {
+            weeksMap.set(p.weekStart, p.weekRange);
+        });
+        return Array.from(weeksMap.entries())
+            .map(([start, range]) => ({ start, range }))
+            .sort((a, b) => b.start.localeCompare(a.start)); // newest first
+    }, [relevantPlans]);
 
+    const [selectedWeek, setSelectedWeek] = useState<string>('');
+    React.useEffect(() => {
+        if (availableWeeks.length > 0 && !selectedWeek) {
+            setSelectedWeek(availableWeeks[0].start);
+        }
+    }, [availableWeeks, selectedWeek]);
+
+    const handleGenerateReport = async (plan: WeeklyPlanSubmission) => {
+        setIsGeneratingReport(prev => ({ ...prev, [plan.id]: true }));
+        try {
+            const subordinateId = plan.userId;
             const allDailyPlans = await DailyPlanService.fetchDailyPlansByUser(subordinateId);
 
-            const ws = new Date(latestPlan.weekStart);
+            const ws = new Date(plan.weekStart);
             const we = new Date(ws);
             we.setDate(we.getDate() + 6);
             const wsStr = ws.toISOString().split('T')[0];
@@ -86,18 +97,18 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
             const result = await generateWeeklyReport(
                 subObj?.name || '未知員工',
                 subObj?.role || '員工',
-                latestPlan.tasks.map(t => ({ name: t.name, outcome: t.outcome, priority: t.priority })),
+                plan.tasks.map(t => ({ name: t.name, outcome: t.outcome, priority: t.priority })),
                 weekDailyPlans.map(dp => ({ date: dp.date, goals: dp.goals.map((g: any) => g.text) }))
             );
 
             if (result) {
-                setReports(prev => ({ ...prev, [subordinateId]: result }));
+                setReports(prev => ({ ...prev, [plan.id]: result }));
                 success("報告生成成功");
                 // Persist to DB
                 try {
-                    await PlanService.saveAiReport(latestPlan.id, result);
+                    await PlanService.saveAiReport(plan.id, result);
                     // Update local object so it stays even if we don't refetch
-                    latestPlan.aiReport = result;
+                    plan.aiReport = result;
                 } catch (saveErr) {
                     console.error("Failed to save AI report:", saveErr);
                 }
@@ -106,7 +117,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
         } catch (e) {
             console.error(e);
         } finally {
-            setIsGeneratingReport(prev => ({ ...prev, [subordinateId]: false }));
+            setIsGeneratingReport(prev => ({ ...prev, [plan.id]: false }));
         }
     };
 
@@ -565,18 +576,26 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                         </div>
                     </>
                 ) : (
-                    /* --- WEEKLY REPORT TAB (MOCK UI) --- */
+                    /* --- WEEKLY REPORT TAB --- */
                     <div className="space-y-6">
                         <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100 mb-6">
                             <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                                 <div>
-                                    <h2 className="text-lg font-bold text-gray-800">2024年 10月 第4週 執行報告</h2>
+                                    <h2 className="text-lg font-bold text-gray-800">
+                                        {availableWeeks.find(w => w.start === selectedWeek)?.range || '執行報告'}
+                                    </h2>
                                     <p className="text-sm text-gray-500 mt-1">此報告根據員工過去 7 天的「每日曉三計畫」比對「原定週計畫」生成。</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <select className="border-gray-200 rounded-lg text-sm p-2 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
-                                        <option>選擇歷史週次</option>
-                                        <option>2024-10-23 ~ 2024-10-29</option>
+                                    <select
+                                        value={selectedWeek}
+                                        onChange={(e) => setSelectedWeek(e.target.value)}
+                                        className="border-gray-200 rounded-lg text-sm p-2 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                    >
+                                        {availableWeeks.length === 0 && <option value="">無歷史週次資料</option>}
+                                        {availableWeeks.map(w => (
+                                            <option key={w.start} value={w.start}>{w.range} ({w.start} 開始)</option>
+                                        ))}
                                     </select>
                                 </div>
                             </div>
@@ -586,10 +605,9 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                         <div className="space-y-6">
                             {subordinateIds.map((subId) => {
                                 const subObj = users.find(u => u.id === subId);
-                                const userPlans = relevantPlans.filter(p => p.userId === subId).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
-                                const latestPlan = userPlans[0];
-                                const report = reports[subId] || latestPlan?.aiReport;
-                                const isGenerating = isGeneratingReport[subId];
+                                const targetPlan = relevantPlans.find(p => p.userId === subId && p.weekStart === selectedWeek);
+                                const report = targetPlan ? (reports[targetPlan.id] || targetPlan.aiReport) : null;
+                                const isGenerating = targetPlan ? (isGeneratingReport[targetPlan.id] || false) : false;
 
                                 return (
                                     <div key={subId} className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 p-6 flex flex-col gap-4">
@@ -604,9 +622,13 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                                 </div>
                                             </div>
 
-                                            {!report && (
+                                            {!targetPlan && (
+                                                <span className="text-sm text-gray-400 italic">本週尚未提交計畫</span>
+                                            )}
+
+                                            {targetPlan && !report && (
                                                 <button
-                                                    onClick={() => handleGenerateReport(subId)}
+                                                    onClick={() => handleGenerateReport(targetPlan)}
                                                     disabled={isGenerating}
                                                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold flex items-center transition-colors disabled:bg-blue-300"
                                                 >
