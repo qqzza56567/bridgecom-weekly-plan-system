@@ -84,11 +84,19 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
             const subordinateId = plan.userId;
             const allDailyPlans = await DailyPlanService.fetchDailyPlansByUser(subordinateId);
 
-            const ws = new Date(plan.weekStart);
-            const we = new Date(ws);
-            we.setDate(we.getDate() + 6);
-            const wsStr = ws.toISOString().split('T')[0];
-            const weStr = we.toISOString().split('T')[0];
+            const ws = new Date(plan.weekStart + 'T00:00:00'); // 強制本地早晨零點
+            const weStrList = [];
+            for (let i = 0; i < 7; i++) {
+                const targetDay = new Date(ws);
+                targetDay.setDate(ws.getDate() + i);
+                const y = targetDay.getFullYear();
+                const m = String(targetDay.getMonth() + 1).padStart(2, '0');
+                const d = String(targetDay.getDate()).padStart(2, '0');
+                weStrList.push(`${y}-${m}-${d}`);
+            }
+
+            const wsStr = weStrList[0];
+            const weStr = weStrList[6];
 
             const weekDailyPlans = allDailyPlans.filter(dp => dp.date >= wsStr && dp.date <= weStr);
 
