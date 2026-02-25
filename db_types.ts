@@ -37,3 +37,12 @@ export interface DbPlanTask {
     last_touched_at: string | null;
     sort_order: number;
 }
+
+export interface DbMonthlyReport {
+    id: string; // UUID
+    user_id: string; // FK -> profiles.id
+    month_label: string; // YYYY-MM
+    report_data: any; // JSONB
+    created_at: string;
+    updated_at: string;
+}

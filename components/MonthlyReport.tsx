@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, MonthlyReportData } from '../types';
 import { PlanService } from '../services/PlanService';
 import { generateMonthlyExecutiveReport } from '../services/geminiService';
-import { BarChart, Clock, Award, AlertTriangle, TrendingUp, Sparkles, Loader2, Calendar, User as UserIcon } from 'lucide-react';
+import { BarChart, Clock, Award, AlertTriangle, TrendingUp, Sparkles, Loader2, Calendar, User as UserIcon, RefreshCw } from 'lucide-react';
 
 interface MonthlyReportProps {
     users: User[];
@@ -19,9 +19,10 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
 
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
     const [report, setReport] = useState<MonthlyReportData | null>(null);
+    const [isLoadedFromDb, setIsLoadedFromDb] = useState<boolean>(false);
     const [errorMsg, setErrorMsg] = useState<string>('');
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (forceGenerate: boolean = false) => {
         if (!selectedUserId || !selectedMonth) return;
 
         setIsGenerating(true);
@@ -31,6 +32,16 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
         try {
             const user = users.find(u => u.id === selectedUserId);
             if (!user) throw new Error("找不到使用者");
+
+            // Check DB first if not forcing generation
+            if (!forceGenerate) {
+                const existingReport = await PlanService.getMonthlyReport(selectedUserId, selectedMonth);
+                if (existingReport) {
+                    setReport(existingReport);
+                    setIsLoadedFromDb(true);
+                    return;
+                }
+            }
 
             // Fetch plans for this user and month
             const plans = await PlanService.fetchMonthlyPlans(selectedUserId, selectedMonth);
@@ -49,6 +60,11 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
             }
 
             setReport(aiReport);
+            setIsLoadedFromDb(false);
+
+            // Save the newly generated report to DB
+            await PlanService.saveMonthlyReport(selectedUserId, selectedMonth, aiReport);
+
         } catch (e: any) {
             console.error(e);
             setErrorMsg(e.message || '發生未知錯誤');
@@ -88,11 +104,11 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
                             ))}
                         </select>
                     </div>
-                    <div className="flex-none">
+                    <div className="flex-none flex items-center md:items-end gap-2">
                         <button
-                            onClick={handleGenerate}
+                            onClick={() => handleGenerate(false)}
                             disabled={isGenerating || !selectedUserId || !selectedMonth}
-                            className="w-full md:w-auto bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-bold disabled:opacity-50 flex items-center justify-center h-[42px]"
+                            className="flex-1 md:flex-none md:w-auto bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-bold disabled:opacity-50 flex items-center justify-center h-[42px]"
                         >
                             {isGenerating ? (
                                 <><Loader2 className="w-5 h-5 animate-spin mr-2" /> 深入分析中...</>
@@ -114,13 +130,26 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
                 <div className="bg-white rounded-xl shadow-xl overflow-hidden animate-fadeIn">
                     {/* 頁首 */}
                     <div className="bg-gradient-to-r from-indigo-900 to-slate-800 p-8 text-white">
-                        <div className="flex justify-between items-start">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <span className="bg-indigo-500/30 text-indigo-200 px-3 py-1 rounded-full text-xs font-bold tracking-wider mb-4 inline-block uppercase border border-indigo-400/30">Monthly Executive Report</span>
+                                <span className="bg-indigo-500/30 text-indigo-200 px-3 py-1 rounded-full text-xs font-bold tracking-wider mb-4 inline-block uppercase border border-indigo-400/30">
+                                    {isLoadedFromDb ? '歷史快取報告 (Cached)' : '最新即時洞察 (Live)'}
+                                </span>
                                 <h2 className="text-3xl font-black mb-2">{users.find(u => u.id === selectedUserId)?.name} · 執行力洞察</h2>
                                 <div className="text-indigo-200">{selectedMonth} 區間 AI 總結分析</div>
                             </div>
-                            <Sparkles className="w-12 h-12 text-indigo-400 opacity-50" />
+                            <div className="flex items-center gap-4">
+                                {isLoadedFromDb && (
+                                    <button
+                                        onClick={() => handleGenerate(true)}
+                                        disabled={isGenerating}
+                                        className="text-sm font-bold text-indigo-200 border border-indigo-500 hover:bg-indigo-800 hover:text-white px-4 py-2 rounded transition flex items-center disabled:opacity-50"
+                                    >
+                                        <RefreshCw size={14} className={`mr-2 ${isGenerating ? 'animate-spin' : ''}`} /> 重新分析本月
+                                    </button>
+                                )}
+                                <Sparkles className="w-12 h-12 text-indigo-400 opacity-50 hidden md:block" />
+                            </div>
                         </div>
                     </div>
 

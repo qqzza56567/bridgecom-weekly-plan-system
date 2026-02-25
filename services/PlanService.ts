@@ -305,5 +305,42 @@ export const PlanService = {
 
         const { error: planError } = await supabase.from('weekly_plans').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         if (planError) throw planError;
+    },
+
+    /**
+     * 月報相關：嘗試讀庫
+     */
+    async getMonthlyReport(userId: string, monthLabel: string): Promise<any | null> {
+        const { data, error } = await supabase
+            .from('monthly_reports')
+            .select('report_data')
+            .eq('user_id', userId)
+            .eq('month_label', monthLabel)
+            .maybeSingle();
+
+        if (error) {
+            console.error("[PlanService] Failed to load monthly report", error);
+            return null;
+        }
+        return data ? data.report_data : null;
+    },
+
+    /**
+     * 月報相關：新增或覆寫
+     */
+    async saveMonthlyReport(userId: string, monthLabel: string, reportData: any): Promise<void> {
+        const { error } = await supabase
+            .from('monthly_reports')
+            .upsert({
+                user_id: userId,
+                month_label: monthLabel,
+                report_data: reportData,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id, month_label' });
+
+        if (error) {
+            console.error("[PlanService] Failed to save monthly report", error);
+            throw error;
+        }
     }
 };

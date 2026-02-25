@@ -483,7 +483,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   const model = genAI.getGenerativeModel({
     model: modelId,
     generationConfig: {
-      temperature: 0.1,
+      temperature: 0.0,
       responseMimeType: "application/json",
       responseSchema: {
         type: SchemaType.OBJECT,
@@ -553,6 +553,11 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
     - 不要流水帳。高層不在乎每天做了什麼雜事。
     - 關注宏觀趨勢：戰略對齊度 (Strategic Focus)、執行可靠度 (Reliability & Execution)。
     - 挖掘系統性風險與高光時刻。
+
+    【穩定化與客觀性限制 (絕對遵守)】：
+    - 切勿隨機捏造任何細節，務必「完全且僅能」基於下方提供的歷史數據作客觀運算與摘要。
+    - 評價標準必須固定：同樣的任務比例與偏差值，必須產出一致的文字評價。
+    - 用詞需高度模式化、收斂，不應該有過度的發散描述。
     
     【本月歷史計畫與執行數據】：
     ${JSON.stringify(monthDataSummary, null, 2)}
@@ -565,12 +570,12 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
        - completionRate: 本月承諾的所有任務中，高完成度(progress>=80)任務的佔比(0-100整數)。
        - estimationDeviation: 本月所有任務的 (實際工時 - 預估工時) 總和偏差百分比。正數代表普遍高估所需時間(工作不飽和)，負數代表普遍低估(經常超時工作)。若是資料不足或差距極小請填 0。
     3. topAchievements (本月高光成就):
-       - 提煉出 1 到 3 句話，具體描述這個月該員達成了什麼最有價值的產出核心貢獻 (請使用肯定且明確的語氣，例如: "成功完成OO系統佈署並上線")。若表現平傭可填選一項最主要的。
+       - 提煉出 1 到 3 句話，依據進度(progress)最高的核心任務摘要貢獻。請直接平鋪直敘，不加額外的主觀修飾語。
     4. systemicObstacles (系統性的摩擦與風險警告):
        - 綜合觀察是否有反覆出現的延遲原因、大量插單、或倦怠與離職風險警報。
-       - 例如："連續三週皆投入超過 60% 處理非預期客訴，建議檢視一線人力配置" 或 "無明顯風險"。若都非常順利無風險請給 null。
+       - 例如："連續三週皆投入超過 60% 處理非預期客訴，建議檢視一線人力配置" 或 "本月無明顯風險"。若都極順利無風險請給 null。
     5. managementAction (人才管理建議):
-       - 給高層的唯一一句總結行動建議 (如：是否該考慮晉升/獎勵、是否該找他面談重新釐清工作守備範圍)。
+       - 給高層的唯一一句總結行動建議 (基於前述客觀指標給予制式化建議，如：是否考慮晉升/獎勵、或約談重新釐清專注範圍)。
 
     請使用繁體中文 (台灣)。語氣冷靜、專業、直擊痛點。
   `;
