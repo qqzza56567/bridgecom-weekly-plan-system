@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, Shield, Users, Database, AlertTriangle, FileJson, RefreshCw, AlertCircle, LayoutDashboard, Eye, Sparkles } from 'lucide-react';
 
 
 import { useToast } from '../components/Toast';
@@ -9,6 +9,7 @@ import { generateId } from '../utils/uuid';
 import { COMPANY_NAME } from '../constants';
 import { ConfirmModal } from './ConfirmModal';
 import { Tracking } from './Tracking';
+import { MonthlyReport } from './MonthlyReport';
 
 interface AdminProps {
   users: User[];
@@ -31,7 +32,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
   const [viewingUser, setViewingUser] = useState<User | null>(null);
 
   // --- Tab State ---
-  const [activeTab, setActiveTab] = useState<'users' | 'monitoring'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'monitoring' | 'monthlyReport'>('users');
   // --- Monitoring State (Replaced by pure Query state) ---
 
 
@@ -176,6 +177,12 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'monitoring' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
               >
                 <LayoutDashboard size={16} className="mr-2" /> 計畫查詢
+              </button>
+              <button
+                onClick={() => setActiveTab('monthlyReport')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center ${activeTab === 'monthlyReport' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                <Sparkles size={16} className="mr-2" /> 月度洞察
               </button>
             </div>
 
@@ -332,7 +339,7 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                   )}
                 </div>
               </>
-            ) : (
+            ) : activeTab === 'monitoring' ? (
               <div className="space-y-6">
                 {/* --- Individual Query Section (Default and Only View for Plan Query) --- */}
                 <div className="space-y-6">
@@ -384,7 +391,11 @@ export const Admin: React.FC<AdminProps> = ({ users, weeklyPlans, dailyPlans, on
                   )}
                 </div>
               </div>
-            )}
+            ) : activeTab === 'monthlyReport' ? (
+              <div className="space-y-6">
+                <MonthlyReport users={users} />
+              </div>
+            ) : null}
           </>
         )}
 

@@ -92,6 +92,21 @@ export interface DailyPlanSubmission {
   incompleteReason?: string; // Reason for not filling all 3 goals
 }
 
+export interface MonthlyReportData {
+  strategicFocus: {
+    averageUnplannedRatio: number;
+    alignedTasks: number;
+    unplannedTasks: number;
+  };
+  executionReliability: {
+    completionRate: number;
+    estimationDeviation: number; // e.g. positive means overestimated, negative means underestimated
+  };
+  topAchievements: string[];
+  systemicObstacles: string | null;
+  managementAction: string;
+}
+
 export interface DailyPlanItem {
   id: number;
   content: string;

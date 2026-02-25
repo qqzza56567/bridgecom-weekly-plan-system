@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { WeeklyPlanSubmission, MonthlyReportData } from "../types";
 
 // WARNING: Frontend API keys are exposed to the client. 
 // For production, it is strongly recommended to move this logic to a Supabase Edge Function 
@@ -451,6 +452,139 @@ export const generateWeeklyReport = async (
     return JSON.parse(text) as WeeklyReportData;
   } catch (error) {
     console.error("Gemini weekly report error:", error);
+    return null;
+  }
+};
+
+export const generateMonthlyExecutiveReport = async (userName: string, userRole: string, monthLabel: string, plans: WeeklyPlanSubmission[]): Promise<MonthlyReportData | null> => {
+  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+
+  if (isPlaceholder) {
+    return {
+      strategicFocus: {
+        averageUnplannedRatio: 35,
+        alignedTasks: 45,
+        unplannedTasks: 25
+      },
+      executionReliability: {
+        completionRate: 85,
+        estimationDeviation: -5
+      },
+      topAchievements: [
+        "順利完成核心系統的資料庫轉移，確保服務穩定性 (MOCK)",
+        "帶領團隊提早交付月底主打功能 (MOCK)"
+      ],
+      systemicObstacles: "跨部門溝通成本偏高，導致多項計畫初期延宕 (MOCK)",
+      managementAction: "建議賦予該員更多專案主導權，並協助排除跨部門協調障礙 (MOCK)"
+    };
+  }
+
+  const modelId = "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          strategicFocus: {
+            type: SchemaType.OBJECT,
+            properties: {
+              averageUnplannedRatio: { type: SchemaType.INTEGER },
+              alignedTasks: { type: SchemaType.INTEGER },
+              unplannedTasks: { type: SchemaType.INTEGER }
+            },
+            required: ["averageUnplannedRatio", "alignedTasks", "unplannedTasks"]
+          },
+          executionReliability: {
+            type: SchemaType.OBJECT,
+            properties: {
+              completionRate: { type: SchemaType.INTEGER },
+              estimationDeviation: { type: SchemaType.INTEGER, description: "預估偏差值，正數代表高估工時，負數代表低估工時" }
+            },
+            required: ["completionRate", "estimationDeviation"]
+          },
+          topAchievements: {
+            type: SchemaType.ARRAY,
+            items: { type: SchemaType.STRING },
+            description: "1到3個具體的高光成就"
+          },
+          systemicObstacles: {
+            type: SchemaType.STRING,
+            nullable: true,
+            description: "系統性風險、長期推力阻礙或過勞/倦怠警訊"
+          },
+          managementAction: { type: SchemaType.STRING, description: "給高階主管的人力資源行動建議" }
+        },
+        required: ["strategicFocus", "executionReliability", "topAchievements", "systemicObstacles", "managementAction"]
+      }
+    }
+  });
+
+  // 整理用於分析的精簡資料，避免爆 Token
+  const monthDataSummary = plans.map(p => {
+    const aiSummary = p.aiReport ? {
+      unplannedRatio: p.aiReport.unplannedRatio,
+      aiCritical: p.aiReport.ai.critical,
+      aiHighlight: p.aiReport.ai.highlight
+    } : null;
+
+    return {
+      weekStart: p.weekStart,
+      totalHours: p.totalHours,
+      keyRatio: p.keyRatio,
+      tasks: p.tasks.map(t => ({
+        name: t.name,
+        category: t.category,
+        estimatedHours: t.hours,
+        actualHours: t.actualHours,
+        progress: t.progress
+      })),
+      aiSummary: aiSummary
+    };
+  });
+
+  const prompt = `
+    你是一位擁有豐富管理經驗的企業高層幕僚與人資顧問。
+    請分析員工「${userName}」(${userRole}) 在「${monthLabel}」整個月的週計畫執行總結，撰寫一份專供總經理/高階主管閱讀的【月度人才戰情洞察報告】(Monthly Executive Report)。
+    
+    【高層閱讀原則】：
+    - 不要流水帳。高層不在乎每天做了什麼雜事。
+    - 關注宏觀趨勢：戰略對齊度 (Strategic Focus)、執行可靠度 (Reliability & Execution)。
+    - 挖掘系統性風險與高光時刻。
+    
+    【本月歷史計畫與執行數據】：
+    ${JSON.stringify(monthDataSummary, null, 2)}
+    
+    【請依照以下結構分析並回傳 JSON】：
+    1. strategicFocus (戰略對齊與專注力): 
+       - 計算這個月的總對齊任務數(alignedTasks)與總插單數(unplannedTasks)。(如果歷史紀錄中沒有 aiSummary，請根據任務中 category 屬性或任務一致性自行粗估)。
+       - 算出本月平均插單率(averageUnplannedRatio，0-100整數)。
+    2. executionReliability (產出與承諾可靠度):
+       - completionRate: 本月承諾的所有任務中，高完成度(progress>=80)任務的佔比(0-100整數)。
+       - estimationDeviation: 本月所有任務的 (實際工時 - 預估工時) 總和偏差百分比。正數代表普遍高估所需時間(工作不飽和)，負數代表普遍低估(經常超時工作)。若是資料不足或差距極小請填 0。
+    3. topAchievements (本月高光成就):
+       - 提煉出 1 到 3 句話，具體描述這個月該員達成了什麼最有價值的產出核心貢獻 (請使用肯定且明確的語氣，例如: "成功完成OO系統佈署並上線")。若表現平傭可填選一項最主要的。
+    4. systemicObstacles (系統性的摩擦與風險警告):
+       - 綜合觀察是否有反覆出現的延遲原因、大量插單、或倦怠與離職風險警報。
+       - 例如："連續三週皆投入超過 60% 處理非預期客訴，建議檢視一線人力配置" 或 "無明顯風險"。若都非常順利無風險請給 null。
+    5. managementAction (人才管理建議):
+       - 給高層的唯一一句總結行動建議 (如：是否該考慮晉升/獎勵、是否該找他面談重新釐清工作守備範圍)。
+
+    請使用繁體中文 (台灣)。語氣冷靜、專業、直擊痛點。
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    if (!text) throw new Error("No response from AI");
+
+    return JSON.parse(text) as MonthlyReportData;
+  } catch (error) {
+    console.error("Gemini monthly report error:", error);
     return null;
   }
 };

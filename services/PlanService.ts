@@ -65,6 +65,30 @@ export const PlanService = {
         });
     },
 
+    async fetchMonthlyPlans(userId: string, yearMonth: string): Promise<WeeklyPlanSubmission[]> {
+        // yearMonth ex: '2024-10'
+        const { data: plans, error } = await supabase
+            .from('weekly_plans')
+            .select(`
+                *,
+                profiles (full_name),
+                plan_tasks (*)
+            `)
+            .eq('user_id', userId)
+            .like('week_start_date', `${yearMonth}-%`)
+            .order('week_start_date', { ascending: true })
+            .order('sort_order', { foreignTable: 'plan_tasks', ascending: true });
+
+        if (error) throw error;
+        if (!plans) return [];
+
+        return plans.map(p => {
+            const userName = (p as any).profiles?.full_name || 'Unknown';
+            const tasks = (p as any).plan_tasks || [];
+            return convertDbPlanToAppPlan(p as any, tasks, userName);
+        });
+    },
+
     /**
      * Create or Update a Weekly Plan
      * This performs a "Upsert" logic or explicit insert/update.
