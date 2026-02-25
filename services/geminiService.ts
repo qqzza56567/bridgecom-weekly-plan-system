@@ -485,15 +485,29 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   let highCompletionTasks = 0;
   let totalEstimatedHours = 0;
   let totalActualHours = 0;
+  let planTaskCountForCompletion = 0; // 用於計算完成率的基數
 
   for (const p of plans) {
-    for (const t of p.tasks) {
-      totalTasksCount++;
-      if (t.category === '關鍵職責') {
-        alignedTasks++;
-      } else {
-        unplannedTasks++;
+    if (p.aiReport) {
+      // 若該週有 AI 審查紀錄，採用 AI 比對每日計畫與週計畫算出的真實插單與對齊數
+      totalTasksCount += (p.aiReport.totalTasks || 0);
+      alignedTasks += (p.aiReport.alignedTasks || 0);
+      unplannedTasks += (p.aiReport.unplannedTasks || 0);
+    } else {
+      // 若無，則退回以週計畫清單（規劃階段）的任務作為基數
+      for (const t of p.tasks) {
+        totalTasksCount++;
+        if (t.category === '關鍵職責') {
+          alignedTasks++;
+        } else {
+          unplannedTasks++;
+        }
       }
+    }
+
+    // 完成率與工時偏差這類「原定計畫執行度」指標，則是絕對看 p.tasks
+    for (const t of p.tasks) {
+      planTaskCountForCompletion++;
       if (t.progress >= 80) {
         highCompletionTasks++;
       }
@@ -504,7 +518,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
 
   // 統一由系統客觀計算，避免出現0項插單卻有28%插單率的自相矛盾情況
   const averageUnplannedRatio = totalTasksCount > 0 ? Math.round((unplannedTasks / totalTasksCount) * 100) : 0;
-  const completionRate = totalTasksCount > 0 ? Math.round((highCompletionTasks / totalTasksCount) * 100) : 0;
+  const completionRate = planTaskCountForCompletion > 0 ? Math.round((highCompletionTasks / planTaskCountForCompletion) * 100) : 0;
   const estimationDeviation = Math.round(totalActualHours - totalEstimatedHours);
 
   const calculatedMetrics = {
