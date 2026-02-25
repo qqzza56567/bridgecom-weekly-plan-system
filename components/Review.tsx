@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, WeeklyPlanSubmission, PlanStatus, LastWeekTaskReview } from '../types';
 import { COMPANY_NAME } from '../constants';
-import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, AlertTriangle, Sparkles, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, AlertTriangle, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 
 interface ReviewProps {
     user: User;
@@ -640,7 +640,18 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                         {report && (
                                             <div className="pt-2">
                                                 <div className="flex justify-between items-center mb-4">
-                                                    <h4 className="font-bold text-gray-700">最新一週執行報告</h4>
+                                                    <div className="flex items-center gap-3">
+                                                        <h4 className="font-bold text-gray-700">最新一週執行報告</h4>
+                                                        <button
+                                                            onClick={() => handleGenerateReport(targetPlan as WeeklyPlanSubmission)}
+                                                            disabled={isGenerating}
+                                                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded flex items-center transition-colors disabled:opacity-50"
+                                                            title="重新向 AI 要求新的分析報告"
+                                                        >
+                                                            <RefreshCw className={`w-3 h-3 mr-1 ${isGenerating ? 'animate-spin' : ''}`} />
+                                                            {isGenerating ? '分析中' : '重新生成'}
+                                                        </button>
+                                                    </div>
                                                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${report.statusTheme === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
                                                         report.statusTheme === 'green' ? 'bg-green-50 border-green-200' :
                                                             'bg-red-50 border-red-200'
