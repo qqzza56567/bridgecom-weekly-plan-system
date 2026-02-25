@@ -67,6 +67,14 @@ export const PlanService = {
 
     async fetchMonthlyPlans(userId: string, yearMonth: string): Promise<WeeklyPlanSubmission[]> {
         // yearMonth ex: '2024-10'
+        const [yearStr, monthStr] = yearMonth.split('-');
+        const year = parseInt(yearStr, 10);
+        const month = parseInt(monthStr, 10);
+
+        const startDate = `${yearMonth}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const endDate = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
         const { data: plans, error } = await supabase
             .from('weekly_plans')
             .select(`
@@ -75,7 +83,8 @@ export const PlanService = {
                 plan_tasks (*)
             `)
             .eq('user_id', userId)
-            .like('week_start_date', `${yearMonth}-%`)
+            .gte('week_start_date', startDate)
+            .lte('week_start_date', endDate)
             .order('week_start_date', { ascending: true })
             .order('sort_order', { foreignTable: 'plan_tasks', ascending: true });
 
