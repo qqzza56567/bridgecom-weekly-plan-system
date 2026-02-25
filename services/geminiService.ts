@@ -519,7 +519,12 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   // 統一由系統客觀計算，避免出現0項插單卻有28%插單率的自相矛盾情況
   const averageUnplannedRatio = totalTasksCount > 0 ? Math.round((unplannedTasks / totalTasksCount) * 100) : 0;
   const completionRate = planTaskCountForCompletion > 0 ? Math.round((highCompletionTasks / planTaskCountForCompletion) * 100) : 0;
-  const estimationDeviation = Math.round(totalActualHours - totalEstimatedHours);
+
+  // 工時預估偏差算法: ((總真實工時 - 總預估工時) / 總預估工時) * 100
+  // 正數 = 高估預估 (實際花的時間比較少) / 負數 = 低估預估 (實際花的時間超過預期)
+  const estimationDeviation = totalEstimatedHours > 0
+    ? Math.round(((totalActualHours - totalEstimatedHours) / totalEstimatedHours) * 100)
+    : 0;
 
   const calculatedMetrics = {
     strategicFocus: {
