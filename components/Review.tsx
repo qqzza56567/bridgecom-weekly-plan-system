@@ -106,7 +106,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                 subObj?.name || '未知員工',
                 subObj?.role || '員工',
                 plan.tasks.map(t => ({ name: t.name, outcome: t.outcome, priority: t.priority })),
-                weekDailyPlans.map(dp => ({ date: dp.date, goals: dp.goals.map((g: any) => g.text) }))
+                weekDailyPlans.map(dp => ({ date: dp.date, goals: dp.goals.map((g: any) => typeof g === 'string' ? g : g.text) }))
             );
 
             if (result) {
