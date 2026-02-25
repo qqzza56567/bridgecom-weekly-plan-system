@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { User, WeeklyPlanSubmission, PlanStatus, LastWeekTaskReview } from '../types';
+import { User, WeeklyPlanSubmission, PlanStatus, LastWeekTaskReview, DailyPlanSubmission } from '../types';
 import { COMPANY_NAME } from '../constants';
 import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, AlertTriangle, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 
@@ -59,6 +59,11 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
     // Report State
     const [reports, setReports] = useState<Record<string, WeeklyReportData>>({});
     const [isGeneratingReport, setIsGeneratingReport] = useState<Record<string, boolean>>({});
+
+    // Raw Data View State
+    const [showRawData, setShowRawData] = useState<Record<string, boolean>>({});
+    const [rawDailyPlans, setRawDailyPlans] = useState<Record<string, DailyPlanSubmission[]>>({});
+    const [isLoadingRaw, setIsLoadingRaw] = useState<Record<string, boolean>>({});
 
     // Week selection for UI
     const availableWeeks = useMemo(() => {
@@ -126,6 +131,39 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
             console.error(e);
         } finally {
             setIsGeneratingReport(prev => ({ ...prev, [plan.id]: false }));
+        }
+    };
+
+    const toggleRawData = async (plan: WeeklyPlanSubmission) => {
+        if (showRawData[plan.id]) {
+            setShowRawData(prev => ({ ...prev, [plan.id]: false }));
+            return;
+        }
+
+        setShowRawData(prev => ({ ...prev, [plan.id]: true }));
+        if (!rawDailyPlans[plan.id]) {
+            setIsLoadingRaw(prev => ({ ...prev, [plan.id]: true }));
+            try {
+                const allDaily = await DailyPlanService.fetchDailyPlansByUser(plan.userId);
+                const ws = new Date(plan.weekStart + 'T00:00:00');
+                const weStrList = [];
+                for (let i = 0; i < 7; i++) {
+                    const targetDay = new Date(ws);
+                    targetDay.setDate(ws.getDate() + i);
+                    const y = targetDay.getFullYear();
+                    const m = String(targetDay.getMonth() + 1).padStart(2, '0');
+                    const d = String(targetDay.getDate()).padStart(2, '0');
+                    weStrList.push(`${y}-${m}-${d}`);
+                }
+                const wsStr = weStrList[0];
+                const weStr = weStrList[6];
+                const weekDaily = allDaily.filter(dp => dp.date >= wsStr && dp.date <= weStr);
+                setRawDailyPlans(prev => ({ ...prev, [plan.id]: weekDaily }));
+            } catch (e) {
+                console.error("Failed to load raw daily plans", e);
+            } finally {
+                setIsLoadingRaw(prev => ({ ...prev, [plan.id]: false }));
+            }
         }
     };
 
@@ -735,6 +773,57 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                                             </div>
                                                         </div>
                                                     </div>
+                                                </div>
+
+                                                <div className="mt-6 border-t border-gray-100 pt-4">
+                                                    <button
+                                                        onClick={() => toggleRawData(targetPlan as WeeklyPlanSubmission)}
+                                                        className="text-sm font-bold text-blue-600 hover:text-blue-800 flex items-center transition-colors"
+                                                    >
+                                                        {showRawData[targetPlan.id] ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
+                                                        {showRawData[targetPlan.id] ? '隱藏分析原始資料' : '檢視分析原始資料 (原定週計畫 / 每日曉三計畫)'}
+                                                    </button>
+
+                                                    {showRawData[targetPlan.id] && (
+                                                        <div className="mt-4 p-5 bg-gray-50 rounded-xl border border-gray-200">
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                                <div>
+                                                                    <h5 className="font-bold text-gray-800 mb-3 flex items-center"><FileText className="w-4 h-4 mr-1 text-gray-500" /> AI 看到的「原定週計畫」</h5>
+                                                                    <ul className="space-y-2">
+                                                                        {targetPlan.tasks.map((t, idx) => (
+                                                                            <li key={idx} className="bg-white p-3 rounded shadow-sm border border-gray-100 text-sm">
+                                                                                <div className="font-bold text-gray-700">{t.name}</div>
+                                                                                <div className="text-gray-500 mt-1">預期產出: {t.outcome}</div>
+                                                                            </li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                                <div>
+                                                                    <h5 className="font-bold text-gray-800 mb-3 flex items-center"><Edit3 className="w-4 h-4 mr-1 text-gray-500" /> AI 看到的「實際曉三計畫」</h5>
+                                                                    {isLoadingRaw[targetPlan.id] ? (
+                                                                        <div className="flex items-center text-gray-500 text-sm"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 讀取資料中...</div>
+                                                                    ) : (
+                                                                        <ul className="space-y-3">
+                                                                            {rawDailyPlans[targetPlan.id]?.length === 0 && (
+                                                                                <div className="text-sm text-gray-400 italic">這 7 天皆未填寫任何計畫。</div>
+                                                                            )}
+                                                                            {rawDailyPlans[targetPlan.id] && [...rawDailyPlans[targetPlan.id]].sort((a, b) => a.date.localeCompare(b.date)).map((dp, idx) => (
+                                                                                <li key={idx} className="bg-white p-3 rounded shadow-sm border border-gray-100 text-sm">
+                                                                                    <span className="font-bold inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs mb-2">{dp.date}</span>
+                                                                                    {dp.goals.length === 0 && <span className="text-gray-400 italic block">當天無填寫項目</span>}
+                                                                                    <ul className="list-disc pl-4 text-gray-700 space-y-1">
+                                                                                        {dp.goals.map((g, gIdx) => (
+                                                                                            <li key={gIdx}>{typeof g === 'string' ? g : (g as any).text}</li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
