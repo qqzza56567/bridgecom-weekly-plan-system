@@ -479,6 +479,46 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
     };
   }
 
+  let alignedTasks = 0;
+  let unplannedTasks = 0;
+  let totalTasksCount = 0;
+  let highCompletionTasks = 0;
+  let totalEstimatedHours = 0;
+  let totalActualHours = 0;
+
+  for (const p of plans) {
+    for (const t of p.tasks) {
+      totalTasksCount++;
+      if (t.category === '關鍵職責') {
+        alignedTasks++;
+      } else {
+        unplannedTasks++;
+      }
+      if (t.progress >= 80) {
+        highCompletionTasks++;
+      }
+      totalEstimatedHours += (Number(t.hours) || 0);
+      totalActualHours += (Number(t.actualHours) || 0);
+    }
+  }
+
+  // 統一由系統客觀計算，避免出現0項插單卻有28%插單率的自相矛盾情況
+  const averageUnplannedRatio = totalTasksCount > 0 ? Math.round((unplannedTasks / totalTasksCount) * 100) : 0;
+  const completionRate = totalTasksCount > 0 ? Math.round((highCompletionTasks / totalTasksCount) * 100) : 0;
+  const estimationDeviation = Math.round(totalActualHours - totalEstimatedHours);
+
+  const calculatedMetrics = {
+    strategicFocus: {
+      averageUnplannedRatio,
+      alignedTasks,
+      unplannedTasks
+    },
+    executionReliability: {
+      completionRate,
+      estimationDeviation
+    }
+  };
+
   const modelId = "gemini-2.0-flash";
   const model = genAI.getGenerativeModel({
     model: modelId,
@@ -488,23 +528,6 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
       responseSchema: {
         type: SchemaType.OBJECT,
         properties: {
-          strategicFocus: {
-            type: SchemaType.OBJECT,
-            properties: {
-              averageUnplannedRatio: { type: SchemaType.INTEGER },
-              alignedTasks: { type: SchemaType.INTEGER },
-              unplannedTasks: { type: SchemaType.INTEGER }
-            },
-            required: ["averageUnplannedRatio", "alignedTasks", "unplannedTasks"]
-          },
-          executionReliability: {
-            type: SchemaType.OBJECT,
-            properties: {
-              completionRate: { type: SchemaType.INTEGER },
-              estimationDeviation: { type: SchemaType.INTEGER, description: "預估偏差值，正數代表高估工時，負數代表低估工時" }
-            },
-            required: ["completionRate", "estimationDeviation"]
-          },
           topAchievements: {
             type: SchemaType.ARRAY,
             items: { type: SchemaType.STRING },
@@ -517,7 +540,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
           },
           managementAction: { type: SchemaType.STRING, description: "給高階主管的人力資源行動建議" }
         },
-        required: ["strategicFocus", "executionReliability", "topAchievements", "systemicObstacles", "managementAction"]
+        required: ["topAchievements", "systemicObstacles", "managementAction"]
       }
     }
   });
@@ -525,15 +548,12 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   // 整理用於分析的精簡資料，避免爆 Token
   const monthDataSummary = plans.map(p => {
     const aiSummary = p.aiReport ? {
-      unplannedRatio: p.aiReport.unplannedRatio,
       aiCritical: p.aiReport.ai.critical,
       aiHighlight: p.aiReport.ai.highlight
     } : null;
 
     return {
       weekStart: p.weekStart,
-      totalHours: p.totalHours,
-      keyRatio: p.keyRatio,
       tasks: p.tasks.map(t => ({
         name: t.name,
         category: t.category,
@@ -556,25 +576,21 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
 
     【穩定化與客觀性限制 (絕對遵守)】：
     - 切勿隨機捏造任何細節，務必「完全且僅能」基於下方提供的歷史數據作客觀運算與摘要。
-    - 評價標準必須固定：同樣的任務比例與偏差值，必須產出一致的文字評價。
     - 用詞需高度模式化、收斂，不應該有過度的發散描述。
     
-    【本月歷史計畫與執行數據】：
+    【系統已事前結算出的客觀指標供您參考】：
+    ${JSON.stringify(calculatedMetrics, null, 2)}
+    
+    【本月任務明細與各週報告重點】：
     ${JSON.stringify(monthDataSummary, null, 2)}
     
     【請依照以下結構分析並回傳 JSON】：
-    1. strategicFocus (戰略對齊與專注力): 
-       - 計算這個月的總對齊任務數(alignedTasks)與總插單數(unplannedTasks)。(如果歷史紀錄中沒有 aiSummary，請根據任務中 category 屬性或任務一致性自行粗估)。
-       - 算出本月平均插單率(averageUnplannedRatio，0-100整數)。
-    2. executionReliability (產出與承諾可靠度):
-       - completionRate: 本月承諾的所有任務中，高完成度(progress>=80)任務的佔比(0-100整數)。
-       - estimationDeviation: 本月所有任務的 (實際工時 - 預估工時) 總和偏差百分比。正數代表普遍高估所需時間(工作不飽和)，負數代表普遍低估(經常超時工作)。若是資料不足或差距極小請填 0。
-    3. topAchievements (本月高光成就):
+    1. topAchievements (本月高光成就):
        - 提煉出 1 到 3 句話，依據進度(progress)最高的核心任務摘要貢獻。請直接平鋪直敘，不加額外的主觀修飾語。
-    4. systemicObstacles (系統性的摩擦與風險警告):
-       - 綜合觀察是否有反覆出現的延遲原因、大量插單、或倦怠與離職風險警報。
+    2. systemicObstacles (系統性的摩擦與風險警告):
+       - 綜合觀察是否有反覆出現的延遲原因、大量插單、或倦怠與離職風險警報 (可參考系統計算出的客觀指標，如高插單率與低完成率)。
        - 例如："連續三週皆投入超過 60% 處理非預期客訴，建議檢視一線人力配置" 或 "本月無明顯風險"。若都極順利無風險請給 null。
-    5. managementAction (人才管理建議):
+    3. managementAction (人才管理建議):
        - 給高層的唯一一句總結行動建議 (基於前述客觀指標給予制式化建議，如：是否考慮晉升/獎勵、或約談重新釐清專注範圍)。
 
     請使用繁體中文 (台灣)。語氣冷靜、專業、直擊痛點。
@@ -587,7 +603,15 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
 
     if (!text) throw new Error("No response from AI");
 
-    return JSON.parse(text) as MonthlyReportData;
+    const aiTextReport = JSON.parse(text);
+
+    // 合併 TypeScript 計算出的精確數據與 AI 生成的文字洞察
+    return {
+      ...calculatedMetrics,
+      topAchievements: aiTextReport.topAchievements,
+      systemicObstacles: aiTextReport.systemicObstacles,
+      managementAction: aiTextReport.managementAction
+    } as MonthlyReportData;
   } catch (error) {
     console.error("Gemini monthly report error:", error);
     return null;
