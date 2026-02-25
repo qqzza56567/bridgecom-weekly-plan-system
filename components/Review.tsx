@@ -167,6 +167,41 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
         }
     };
 
+    const handleToggleTaskAlignment = async (planId: string, evalIndex: number) => {
+        const currentReport = reports[planId];
+        if (!currentReport || !currentReport.taskEvaluations) return;
+
+        const newReport = { ...currentReport, taskEvaluations: [...currentReport.taskEvaluations] };
+        const targetEval = { ...newReport.taskEvaluations[evalIndex] };
+
+        targetEval.isAligned = !targetEval.isAligned;
+        newReport.taskEvaluations[evalIndex] = targetEval;
+
+        newReport.totalTasks = newReport.taskEvaluations.length;
+        newReport.alignedTasks = newReport.taskEvaluations.filter(e => e.isAligned).length;
+        newReport.unplannedTasks = newReport.totalTasks - newReport.alignedTasks;
+        newReport.unplannedRatio = newReport.totalTasks > 0 ? Math.round((newReport.unplannedTasks / newReport.totalTasks) * 100) : 0;
+
+        if (newReport.unplannedRatio < 20) {
+            newReport.statusTheme = 'green';
+            newReport.statusText = `高度對齊 (${100 - newReport.unplannedRatio}% 對齊)`;
+        } else if (newReport.unplannedRatio <= 50) {
+            newReport.statusTheme = 'yellow';
+            newReport.statusText = `偏離注意 (${100 - newReport.unplannedRatio}% 對齊)`;
+        } else {
+            newReport.statusTheme = 'red';
+            newReport.statusText = `嚴重偏離 (${100 - newReport.unplannedRatio}% 對齊)`;
+        }
+
+        setReports(prev => ({ ...prev, [planId]: newReport }));
+
+        try {
+            await PlanService.saveAiReport(planId, newReport);
+        } catch (e) {
+            console.error("Failed to save adjusted report", e);
+        }
+    };
+
     const handleStatusChange = async (plan: WeeklyPlanSubmission, newStatus: PlanStatus) => {
         const comment = editingComment[plan.id] !== undefined ? editingComment[plan.id] : (plan.reviewComment || '');
 
@@ -811,10 +846,31 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                                                                 <li key={idx} className="bg-white p-3 rounded shadow-sm border border-gray-100 text-sm">
                                                                                     <span className="font-bold inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs mb-2">{dp.date}</span>
                                                                                     {dp.goals.length === 0 && <span className="text-gray-400 italic block">當天無填寫項目</span>}
-                                                                                    <ul className="list-disc pl-4 text-gray-700 space-y-1">
-                                                                                        {dp.goals.map((g, gIdx) => (
-                                                                                            <li key={gIdx}>{typeof g === 'string' ? g : (g as any).text}</li>
-                                                                                        ))}
+                                                                                    <ul className="list-disc pl-4 text-gray-700 space-y-3 mt-2">
+                                                                                        {dp.goals.map((g, gIdx) => {
+                                                                                            const goalText = typeof g === 'string' ? g : (g as any).text;
+                                                                                            const currentReport = reports[targetPlan.id];
+                                                                                            const evalIndex = currentReport?.taskEvaluations?.findIndex(e => e.date === dp.date && e.task === goalText);
+                                                                                            const evaluation = evalIndex !== undefined && evalIndex !== -1 ? currentReport!.taskEvaluations[evalIndex] : null;
+
+                                                                                            return (
+                                                                                                <li key={gIdx} className="flex flex-col">
+                                                                                                    <span className="font-medium">{goalText}</span>
+                                                                                                    {evaluation && (
+                                                                                                        <div className="mt-1.5 flex items-start text-xs bg-gray-50/50 p-2 rounded border border-gray-100">
+                                                                                                            <button
+                                                                                                                onClick={() => handleToggleTaskAlignment(targetPlan.id, evalIndex!)}
+                                                                                                                className={`px-2 py-1 flex-shrink-0 rounded shadow-sm mr-3 font-bold cursor-pointer transition-colors whitespace-nowrap ${evaluation.isAligned ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'}`}
+                                                                                                                title="點擊切換該任務的對齊狀態"
+                                                                                                            >
+                                                                                                                {evaluation.isAligned ? '✅ 對齊' : '⚠️ 插單'}
+                                                                                                            </button>
+                                                                                                            <span className="text-gray-500 italic mt-0.5 leading-relaxed">{evaluation.reason}</span>
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </li>
+                                                                                            );
+                                                                                        })}
                                                                                     </ul>
                                                                                 </li>
                                                                             ))}

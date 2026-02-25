@@ -322,6 +322,13 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
   }
 };
 
+export interface DailyTaskEvaluation {
+  date: string;
+  task: string;
+  isAligned: boolean;
+  reason: string;
+}
+
 export interface WeeklyReportData {
   statusTheme: 'red' | 'yellow' | 'green';
   statusText: string;
@@ -329,6 +336,7 @@ export interface WeeklyReportData {
   unplannedTasks: number;
   unplannedRatio: number;
   alignedTasks: number;
+  taskEvaluations: DailyTaskEvaluation[];
   ai: {
     critical: string | null;
     suggestion: string;
@@ -353,6 +361,7 @@ export const generateWeeklyReport = async (
       unplannedTasks: 5,
       unplannedRatio: 33,
       alignedTasks: 10,
+      taskEvaluations: [],
       ai: {
         critical: '週四與週五出現大量未在週計畫內的臨時任務。',
         suggestion: '建議與該同仁進行 1on1，確認是否有過度塞單的狀況。',
@@ -376,6 +385,19 @@ export const generateWeeklyReport = async (
           unplannedTasks: { type: SchemaType.INTEGER },
           unplannedRatio: { type: SchemaType.INTEGER },
           alignedTasks: { type: SchemaType.INTEGER },
+          taskEvaluations: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                date: { type: SchemaType.STRING },
+                task: { type: SchemaType.STRING },
+                isAligned: { type: SchemaType.BOOLEAN },
+                reason: { type: SchemaType.STRING }
+              },
+              required: ["date", "task", "isAligned", "reason"]
+            }
+          },
           ai: {
             type: SchemaType.OBJECT,
             properties: {
@@ -386,7 +408,7 @@ export const generateWeeklyReport = async (
             required: ["suggestion"]
           }
         },
-        required: ["statusTheme", "statusText", "totalTasks", "unplannedTasks", "unplannedRatio", "alignedTasks", "ai"]
+        required: ["statusTheme", "statusText", "totalTasks", "unplannedTasks", "unplannedRatio", "alignedTasks", "taskEvaluations", "ai"]
       }
     }
   });
@@ -405,17 +427,18 @@ export const generateWeeklyReport = async (
     1. 計算本週實際填寫的每日總任務數 (totalTasks)。
     2. 比對每日任務與週計畫任務。判斷哪些每日任務是「有對齊原計畫」的(alignedTasks)，哪些是「臨時插單/未在原計畫內」的(unplannedTasks)。
     3. 計算 unplannedRatio = (unplannedTasks / totalTasks) * 100，四捨五入到整數。如果 totalTasks 是 0，則數值為 0。
-    4. 依據 unplannedRatio 及質性分析給予狀態燈號 (statusTheme):
+    4. 針對每一天的每一項具體曉三計畫任務，評估其是否與「原定週計畫任務」相關 (有對齊為 isAligned: true，臨時插單為 isAligned: false)，並簡述極短的判定理由 (reason)。將所有評估結果放進 taskEvaluations 陣列中。
+    5. 依據 unplannedRatio 及質性分析給予整體狀態燈號 (statusTheme):
        - 🟢 green: 高度對齊 (unplannedRatio < 20%)
        - 🟡 yellow: 偏離注意 (unplannedRatio 介於 20% ~ 50%)
        - 🔴 red: 嚴重偏離 (unplannedRatio > 50%) 或 有明顯的方向錯誤。
-    5. 產生對應長度的 statusText，例如「高度對齊 (92% 對齊)」、「嚴重偏離 (40% 對齊)」。
-    6. 提供具體的 AI 洞察 (ai 物件):
+    6. 產生對應長度的 statusText，例如「高度對齊 (92% 對齊)」、「嚴重偏離 (40% 對齊)」。
+    7. 提供具體的 AI 洞察 (ai 物件):
        - critical: 如果有嚴重的偏誤、大量插單、或連續幾天沒推進核心任務，請具體指出是哪一天、什麼任務造成的。若無嚴重問題傳回 null。
        - suggestion: 給主管的一段溝通建議 (例如該不該找員工 1on1，或該如何讚賞)。
        - highlight: 表現優異的亮點 (例如某天專注完成了重要計畫)。若無明顯亮點傳回 null。
 
-    請使用繁體中文 (台灣) 回覆，文字風格要專業且直白。
+    請使用繁體中文 (台灣) 回覆，文字風格要專業且簡潔。
   `;
 
   try {
