@@ -106,7 +106,7 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
         }
     };
 
-    const isPast = useMemo(() => selectedDate < todayStr, [selectedDate, todayStr]);
+    const isReadOnly = useMemo(() => selectedDate < addDays(todayStr, -3), [selectedDate, todayStr]);
 
     const handleSubmit = async () => {
         const filledGoals = goals.filter(g => g.trim());
@@ -296,14 +296,14 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                                 </div>
                                 <div className="flex-1">
                                     <p className="text-gray-500 text-sm">請專注於今日最有價值的工作項目</p>
-                                    {isPast && <p className="text-blue-600 text-xs font-bold mt-1">歷史紀錄僅供檢視，不可修改。</p>}
+                                    {isReadOnly && <p className="text-blue-600 text-xs font-bold mt-1">超過三天的歷史紀錄僅供檢視，不可修改。</p>}
                                 </div>
                             </div>
 
 
 
                             {/* Determine whether to show edit mode or view mode */}
-                            {!isPast && (!existingPlan || isWithdrawn) ? (
+                            {!isReadOnly && (!existingPlan || isWithdrawn) ? (
                                 <>
                                     {/* Instruction Box */}
                                     <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 mb-8 shadow-sm flex items-start gap-4">
@@ -391,7 +391,7 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                                     <div className="mt-8 flex gap-4">
                                         <button
                                             onClick={handleSubmit}
-                                            disabled={isValidating || isPast}
+                                            disabled={isValidating || isReadOnly}
                                             className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {isValidating ? (
@@ -414,7 +414,7 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                                 /* View Mode */
                                 <div className="space-y-8 animate-fadeIn">
                                     {/* Notice for past dates with no plan */}
-                                    {isPast && goals.every(g => !g.trim()) ? (
+                                    {isReadOnly && goals.every(g => !g.trim()) ? (
                                         <div className="p-12 bg-gray-100 border border-gray-300 rounded-lg text-center">
                                             <p className="text-gray-500 text-xl font-medium">📅 當日未填寫計畫</p>
                                         </div>
@@ -443,7 +443,7 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                                                 </div>
                                             )}
 
-                                            {!isPast && (
+                                            {!isReadOnly && (
                                                 <div className="mt-8 pt-6 border-t border-gray-100">
                                                     <button
                                                         onClick={handleWithdraw}
