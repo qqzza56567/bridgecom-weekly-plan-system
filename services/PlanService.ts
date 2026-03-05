@@ -227,7 +227,7 @@ export const PlanService = {
 
     /**
      * Update Plan during Review (Status, Comment, Last Week Review)
-     * This avoids touching plan_tasks table, as requested.
+     * Now also syncs review stats to original tasks upon approval.
      */
     async updateReviewData(planId: string, status: PlanStatus, comment: string, lastWeekReview: any): Promise<void> {
         const { error } = await supabase
@@ -241,6 +241,33 @@ export const PlanService = {
             .eq('id', planId);
 
         if (error) throw error;
+
+        // If approved, sync Last Week Review stats back to the ORIGINAL tasks (for History View)
+        if (status === 'approved' && lastWeekReview && lastWeekReview.tasks && lastWeekReview.tasks.length > 0) {
+            console.log("[PlanService] Review approved! Syncing review stats to historical tasks...");
+            const reviewUpdates = lastWeekReview.tasks.map(async (rTask: any) => {
+                let { data, error: updateError } = await supabase
+                    .from('plan_tasks')
+                    .update({
+                        actual_hours: Number(rTask.actualHours) || 0,
+                        progress: Number(rTask.progress) || 0,
+                        not_done_reason: rTask.notDoneReason || null,
+                        last_touched_at: new Date().toISOString()
+                    })
+                    .eq('id', rTask.taskId)
+                    .select();
+
+                if (updateError) {
+                    console.error(`[PlanService] Failed to update task ${rTask.taskId}`, updateError);
+                } else if (!data || data.length === 0) {
+                    console.error(`[PlanService] CRITICAL: Task ID ${rTask.taskId} lookup failed. This indicates an ID consistency issue.`);
+                } else {
+                    console.log(`[PlanService] Successfully updated task ${rTask.taskId}. Progress: ${rTask.progress}%`);
+                }
+            });
+
+            await Promise.all(reviewUpdates);
+        }
     },
 
     /**
