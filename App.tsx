@@ -19,6 +19,7 @@ const Tracking = React.lazy(() => import('./components/Tracking').then(m => ({ d
 import { UserService } from './services/UserService';
 import { PlanService } from './services/PlanService';
 import { DailyPlanService } from './services/DailyPlanService';
+import { getCurrentWeekStart, getWeekRangeString } from './utils/dateUtils';
 
 // --- Shared Small Components ---
 
@@ -215,19 +216,53 @@ const AppContent: React.FC = () => {
 
       // 2. Fetch Data
       if (activeProfile.isManager || activeProfile.isAdmin) {
-        const [allUsers, allPlans, allDaily] = await Promise.all([
+        let [allUsers, allPlans, allDaily] = await Promise.all([
           UserService.fetchAllUsers(),
           PlanService.fetchAllPlans(),
           DailyPlanService.fetchAllDailyPlans()
         ]);
+
+        // --- Auto-generate Empty Plans for Missing Users ---
+        // Only run after Thursday (Friday = 5, Sat = 6, Sun = 0, Mon = 1, Tue = 2)
+        const todayDay = new Date().getDay();
+        const isPastGracePeriod = todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2;
+
+        if (isPastGracePeriod) {
+          const currentWs = getCurrentWeekStart();
+          const currentWr = getWeekRangeString(currentWs);
+
+          // Get subordinates to ensure plans for them
+          const subs = allUsers.filter(u => activeProfile.subordinates?.includes(u.id));
+          if (subs.length > 0) {
+            await PlanService.ensureEmptyPlansExist(subs, currentWs, currentWr);
+            // Re-fetch plans to include newly generated ones
+            allPlans = await PlanService.fetchAllPlans();
+          }
+        }
+        // ----------------------------------------------------
+
         setUsers(allUsers);
         setWeeklyPlans(allPlans);
         setDailyPlans(allDaily);
       } else {
-        const [myPlans, myDaily] = await Promise.all([
+        // Employee path: also check auto-generation for themselves
+        let [myPlans, myDaily] = await Promise.all([
           PlanService.fetchUserPlans(userId),
           DailyPlanService.fetchDailyPlansByUser(userId)
         ]);
+
+        const todayDay = new Date().getDay();
+        const isPastGracePeriod = todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2;
+
+        if (isPastGracePeriod) {
+          const currentWs = getCurrentWeekStart();
+          const currentWr = getWeekRangeString(currentWs);
+
+          // Generate for self if missing
+          await PlanService.ensureEmptyPlansExist([activeProfile], currentWs, currentWr);
+          myPlans = await PlanService.fetchUserPlans(userId);
+        }
+
         setWeeklyPlans(myPlans);
         setDailyPlans(myDaily);
       }

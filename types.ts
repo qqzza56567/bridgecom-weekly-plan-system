@@ -80,6 +80,9 @@ export interface WeeklyPlanSubmission {
 
   // AI-generated execution report
   aiReport?: WeeklyReportData;
+
+  // New field: allowing an admin to unlock an overdue plan
+  isUnlocked?: boolean;
 }
 
 export interface DailyPlanSubmission {

@@ -20,6 +20,7 @@ export interface DbWeeklyPlan {
     remark: string | null;
     last_week_review: any; // JSONB
     ai_report: any; // JSONB
+    is_unlocked?: boolean;
 }
 
 export interface DbPlanTask {

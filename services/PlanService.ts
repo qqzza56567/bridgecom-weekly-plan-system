@@ -18,12 +18,13 @@ function convertDbPlanToAppPlan(dbPlan: DbWeeklyPlan, dbTasks: DbPlanTask[] | un
         weekStart: dbPlan.week_start_date,
         submittedAt: dbPlan.submitted_at || '',
         updatedAt: dbPlan.updated_at,
-        status: dbPlan.status,
+        status: dbPlan.status as any,
         reviewComment: dbPlan.review_comment || undefined,
         totalHours: Number(dbPlan.total_hours),
         keyRatio: Number(dbPlan.key_ratio),
         remark: dbPlan.remark || undefined,
         lastWeekReview: dbPlan.last_week_review || undefined,
+        isUnlocked: dbPlan.is_unlocked || false,
         tasks: (dbTasks || []).map(t => ({
             id: t.id,
             name: t.name,
@@ -138,7 +139,8 @@ export const PlanService = {
                 key_ratio: Number(plan.keyRatio) || 0,
                 remark: plan.remark || null,
                 last_week_review: plan.lastWeekReview || null,
-                ai_report: plan.aiReport || null
+                ai_report: plan.aiReport || null,
+                is_unlocked: plan.isUnlocked || false
             };
 
             const { error: planError } = await supabase
@@ -369,5 +371,61 @@ export const PlanService = {
             console.error("[PlanService] Failed to save monthly report", error);
             throw error;
         }
+    },
+
+    /**
+     * Ensure that for the given current week, every user has at least a draft plan.
+     * This acts as the auto-assign/auto-generation mechanism.
+     */
+    async ensureEmptyPlansExist(users: { id: string }[], currentWeekStart: string, currentWeekRange: string): Promise<void> {
+        try {
+            // Get all plans for this week
+            const { data: existingPlans, error } = await supabase
+                .from('weekly_plans')
+                .select('user_id')
+                .eq('week_start_date', currentWeekStart);
+
+            if (error) throw error;
+
+            const existingUserIds = new Set(existingPlans?.map(p => p.user_id) || []);
+            const missingUsers = users.filter(u => !existingUserIds.has(u.id));
+
+            if (missingUsers.length === 0) return;
+
+            // Generate overdue plans for missing users
+            const draftPlans: Partial<DbWeeklyPlan>[] = missingUsers.map(u => ({
+                id: crypto.randomUUID(),
+                user_id: u.id,
+                week_start_date: currentWeekStart,
+                week_range_label: currentWeekRange,
+                status: 'draft',
+                submitted_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                total_hours: 0,
+                key_ratio: 0,
+                is_unlocked: false
+            }));
+
+            const { error: insertError } = await supabase
+                .from('weekly_plans')
+                .insert(draftPlans);
+
+            if (insertError) throw insertError;
+
+        } catch (error) {
+            console.error("Failed to ensure empty plans exist", error);
+        }
+    },
+
+    /**
+     * Unlocks an overdue plan for a user to continue editing
+     */
+    async unlockPlan(planId: string): Promise<void> {
+        const { error } = await supabase
+            .from('weekly_plans')
+            .update({ is_unlocked: true, updated_at: new Date().toISOString() })
+            .eq('id', planId);
+
+        if (error) throw error;
     }
 };

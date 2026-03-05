@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { User, WeeklyPlanSubmission } from '../types';
 import { Header } from './Header';
-import { Plus, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Edit3, AlertCircle, Calendar, RotateCcw, FileEdit, MessageSquare } from 'lucide-react';
+import { Plus, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Edit3, AlertCircle, Calendar, RotateCcw, FileEdit, MessageSquare, AlertTriangle } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { COMPANY_NAME } from '../constants';
 import { getCurrentWeekStart, addDays, getWeekRangeString } from '../utils/dateUtils';
@@ -105,7 +105,11 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
         return null;
     };
 
-    const renderStatusBadge = (status: string) => {
+    const renderStatusBadge = (status: string, isLocked: boolean = false) => {
+        if (isLocked) {
+            return <span className="flex items-center text-red-600 font-bold text-sm"><AlertTriangle size={14} className="mr-1" /> 已逾期 (鎖定)</span>;
+        }
+
         switch (status) {
             case 'pending': return <span className="flex items-center text-gray-500 font-bold text-sm"><Clock size={14} className="mr-1" /> 待審核</span>;
             case 'approved': return <span className="flex items-center text-green-600 font-bold text-sm"><CheckCircle size={14} className="mr-1" /> 已通過</span>;
@@ -119,15 +123,20 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
     const renderPlanCard = (plan: WeeklyPlanSubmission) => {
         const isExpanded = expandedPlanId === plan.id;
 
+        // Determine if this draft plan is locked (past grace period and not unlocked by admin)
+        const todayDay = new Date().getDay();
+        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
+        const isLocked = plan.status === 'draft' && isPastGracePeriod && !plan.isUnlocked;
+
         return (
             <div key={plan.id} className={`bg-white rounded-xl shadow-sm border transition-all duration-200 ${isExpanded ? 'border-blue-300 ring-1 ring-blue-100' : 'border-gray-200 hover:shadow-md'}`}>
                 {/* Summary Header - Click to Toggle */}
                 <div
                     onClick={() => toggleExpand(plan.id)}
-                    className="p-4 cursor-pointer flex justify-between items-center"
+                    className={`p-4 cursor-pointer flex justify-between items-center ${isLocked ? 'bg-red-50/30' : ''}`}
                 >
                     <div className="flex items-center gap-3">
-                        <div className={`w-1.5 h-12 rounded-full ${plan.status === 'approved' ? 'bg-green-500' : plan.status === 'rejected' ? 'bg-red-500' : plan.status === 'draft' ? 'bg-gray-300' : 'bg-gray-400'}`}></div>
+                        <div className={`w-1.5 h-12 rounded-full ${isLocked ? 'bg-red-400' : plan.status === 'approved' ? 'bg-green-500' : plan.status === 'rejected' ? 'bg-red-500' : plan.status === 'draft' ? 'bg-gray-300' : 'bg-gray-400'}`}></div>
                         <div>
                             <div className="flex items-center">
                                 <h3 className="text-lg font-bold text-gray-800">{plan.weekRange}</h3>
@@ -149,7 +158,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
-                        {renderStatusBadge(plan.status)}
+                        {renderStatusBadge(plan.status, isLocked)}
                         {isExpanded ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
                     </div>
                 </div>
@@ -226,7 +235,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                             )}
 
                             {/* Draft -> Continue Editing */}
-                            {plan.status === 'draft' && (
+                            {plan.status === 'draft' && !isLocked && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -236,6 +245,12 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                                 >
                                     <Edit3 size={16} className="mr-2" /> 繼續編輯
                                 </button>
+                            )}
+
+                            {plan.status === 'draft' && isLocked && (
+                                <div className="text-sm font-bold text-red-500 flex items-center bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
+                                    <AlertTriangle size={16} className="mr-1.5" /> 此計畫已逾期鎖定，請聯繫主管重新開放權限。
+                                </div>
                             )}
 
                             {/* Rejected -> Modify */}

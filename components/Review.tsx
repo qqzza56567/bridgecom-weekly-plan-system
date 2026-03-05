@@ -244,8 +244,28 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
         setExpandedPlanId(null);
     };
 
+    const handleUnlockClick = async (plan: WeeklyPlanSubmission) => {
+        try {
+            await PlanService.unlockPlan(plan.id);
+            // Update local state
+            const updatedPlan = { ...plan, isUnlocked: true };
+            await onUpdatePlan(updatedPlan);
+            success("已為該員工重新開放填寫權限");
+        } catch (error) {
+            console.error("Failed to unlock plan:", error);
+            // toast.error("重新開放權限失敗"); 
+        }
+    };
+
     // Helper to render Status Badge
-    const renderStatusBadge = (status: string) => {
+    const renderStatusBadge = (status: string, isPastGracePeriod: boolean = false, isUnlocked: boolean = false) => {
+        if (status === 'draft') {
+            if (isPastGracePeriod && !isUnlocked) {
+                return <span className="flex items-center bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold"><AlertTriangle size={12} className="mr-1" /> 已逾期鎖定</span>;
+            }
+            return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><FileText size={12} className="mr-1" /> 草稿</span>;
+        }
+
         switch (status) {
             case 'pending': return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><Clock size={12} className="mr-1" /> 待審核</span>;
             case 'approved': return <span className="flex items-center bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold"><CheckCircle size={12} className="mr-1" /> 已通過</span>;
@@ -256,6 +276,10 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
 
     // 1. Render Full Expanded Card (For Pending or Manually Expanded)
     const renderFullPlanCard = (plan: WeeklyPlanSubmission) => {
+        const todayDay = new Date().getDay();
+        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
+        const isLockedDraft = plan.status === 'draft' && isPastGracePeriod && !plan.isUnlocked;
+
         return (
             <div key={plan.id} className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm mb-4 border-l-4 border-l-blue-500">
                 {/* Header */}
@@ -263,7 +287,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                     <div>
                         <div className="flex items-center gap-3 mb-1">
                             <span className="font-bold text-gray-800 text-lg">{plan.weekRange}</span>
-                            {renderStatusBadge(plan.status)}
+                            {renderStatusBadge(plan.status, isPastGracePeriod, plan.isUnlocked || false)}
                         </div>
                         <span className="text-xs text-gray-500">提交於 {plan.submittedAt}</span>
                     </div>
@@ -412,35 +436,58 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                     );
                 })()}
 
-                {/* Task List */}
-                <ul className="space-y-3 mb-6">
-                    {plan.tasks.map((task, i) => (
-                        <li key={i} className="text-sm text-gray-700 p-3 bg-gray-50 rounded border border-gray-100 transition-colors hover:bg-white hover:shadow-sm">
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-bold text-gray-900 text-base leading-tight flex-1 mr-4">{task.outcome}</span>
-                                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${(task.progress ?? 0) === 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                        進度: {task.progress ?? 0}%
-                                    </span>
-                                    <span className="text-[10px] bg-white border px-1.5 py-0.5 rounded text-gray-500 font-medium whitespace-nowrap">{task.priority}</span>
-                                </div>
-                            </div>
+                {/* If it's a drafted skeleton plan, hide the current weeks tasks and instead show a warning / unlock button */}
+                {plan.status === 'draft' ? (
+                    <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 text-center mb-6">
+                        <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <h4 className="font-bold text-gray-800 mb-2">本週計畫尚未建立</h4>
+                        <p className="text-gray-500 text-sm mb-4">
+                            系統已自動產生檢討表單。您可先於上方「上週週計畫檢討」回填進度紀錄。
+                            {isLockedDraft && " 該名員工已逾期，若有特例需求，可重新開放權限。"}
+                        </p>
 
-                            <div className="flex items-center text-gray-500 text-xs mb-3 bg-white/50 p-1.5 rounded border border-gray-100/50 w-fit">
-                                <span className="bg-gray-200 text-gray-600 text-[10px] px-1.5 rounded mr-2 font-bold">任務</span>
-                                {task.name}
-                            </div>
+                        {isLockedDraft && user.isAdmin && (
+                            <button
+                                onClick={() => handleUnlockClick(plan)}
+                                className="inline-flex items-center bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg font-bold text-sm hover:bg-red-100 transition shadow-sm"
+                            >
+                                🔓 重新開放填寫權限
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        {/* Task List */}
+                        <ul className="space-y-3 mb-6">
+                            {plan.tasks.map((task, i) => (
+                                <li key={i} className="text-sm text-gray-700 p-3 bg-gray-50 rounded border border-gray-100 transition-colors hover:bg-white hover:shadow-sm">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="font-bold text-gray-900 text-base leading-tight flex-1 mr-4">{task.outcome}</span>
+                                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${(task.progress ?? 0) === 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                進度: {task.progress ?? 0}%
+                                            </span>
+                                            <span className="text-[10px] bg-white border px-1.5 py-0.5 rounded text-gray-500 font-medium whitespace-nowrap">{task.priority}</span>
+                                        </div>
+                                    </div>
 
-                            <div className="text-gray-400 text-xs flex justify-between pt-2 border-t border-gray-200/60">
-                                <div className="flex gap-4">
-                                    <span>預估: {task.hours}hr</span>
-                                    <span>實際: {task.actualHours || 0}hr</span>
-                                </div>
-                                <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-500 text-[10px]">{task.category}</span>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
+                                    <div className="flex items-center text-gray-500 text-xs mb-3 bg-white/50 p-1.5 rounded border border-gray-100/50 w-fit">
+                                        <span className="bg-gray-200 text-gray-600 text-[10px] px-1.5 rounded mr-2 font-bold">任務</span>
+                                        {task.name}
+                                    </div>
+
+                                    <div className="text-gray-400 text-xs flex justify-between pt-2 border-t border-gray-200/60">
+                                        <div className="flex gap-4">
+                                            <span>預估: {task.hours}hr</span>
+                                            <span>實際: {task.actualHours || 0}hr</span>
+                                        </div>
+                                        <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-500 text-[10px]">{task.category}</span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </>
+                )}
 
                 {/* Review Action Area */}
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
@@ -495,16 +542,19 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                     ? 'bg-green-700 text-white ring-2 ring-green-200'
                                     : 'bg-green-600 text-white hover:bg-green-700'}`}
                         >
-                            <CheckCircle size={16} className="mr-1.5" /> 通過審核
+                            <CheckCircle size={16} className="mr-1.5" /> 儲存檢討與審核結果
                         </button>
                     </div>
                 </div>
-            </div>
+            </div >
         );
     };
 
     // 2. Render Compact Row (For History Items)
     const renderCompactRow = (plan: WeeklyPlanSubmission) => {
+        const todayDay = new Date().getDay();
+        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
+
         return (
             <div key={plan.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3 flex items-center justify-between hover:bg-gray-50 transition">
                 <div className="flex items-center gap-4">
@@ -512,7 +562,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                         <span className="font-bold text-gray-800">{plan.weekRange}</span>
                         <span className="text-xs text-gray-500">提交: {plan.submittedAt}</span>
                     </div>
-                    {renderStatusBadge(plan.status)}
+                    {renderStatusBadge(plan.status, isPastGracePeriod, plan.isUnlocked || false)}
                 </div>
 
                 <button

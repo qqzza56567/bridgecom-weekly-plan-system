@@ -183,7 +183,21 @@ export const WeeklyPlan: React.FC<WeeklyPlanProps> = ({ user, initialData, targe
                 actualHours: t.actualHours || 0,
                 progress: t.progress || 0,
             }));
-            setTasks(processedTasks);
+            if (processedTasks.length > 0) {
+                setTasks(processedTasks);
+            } else {
+                setTasks([
+                    {
+                        id: generateId(),
+                        category: TaskCategory.KEY_RESPONSIBILITY,
+                        priority: TaskPriority.MEDIUM,
+                        name: '',
+                        outcome: '',
+                        hours: 0,
+                        progress: 0,
+                    }
+                ]);
+            }
             if (initialData.remark) setRemark(initialData.remark);
         }
     }, [initialData]);
