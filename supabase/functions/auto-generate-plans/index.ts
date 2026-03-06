@@ -5,25 +5,43 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const FROM_EMAIL = Deno.env.get('FROM_EMAIL') || 'no-reply@yourdomain.com';
 
-// 計算本週週一日期（週計畫以週一為起點）
-function getCurrentWeekStart(): string {
-    const now = new Date();
-    // 若是週日 (0)，退一週
-    const day = now.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diff);
-    return monday.toISOString().split('T')[0];
+// 取得台灣時間（UTC+8）
+function getTaiwanNow(): Date {
+    return new Date(Date.now() + 8 * 60 * 60 * 1000);
 }
 
-// 產生週次標籤，例如 "2025-W08"
+// 計算當前週計畫起始日（週三）
+// 規則：
+//   - 週三（3）、週四（4）→ 本週週三
+//   - 週五（5）、週六（6）、週日（0）、週一（1）、週二（2）→ 下週週三
+function getCurrentWeekStart(): string {
+    const now = getTaiwanNow();
+    const day = now.getUTCDay(); // 0=週日, 1=週一, ..., 3=週三, 4=週四 ...
+    let daysToAdd: number;
+    if (day === 3 || day === 4) {
+        // 本週週三
+        daysToAdd = 3 - day; // e.g. 週四時為 -1
+    } else {
+        // 下週週三
+        daysToAdd = (3 - day + 7) % 7;
+        if (daysToAdd === 0) daysToAdd = 7;
+    }
+    const wednesday = new Date(now);
+    wednesday.setUTCDate(now.getUTCDate() + daysToAdd);
+    // 回傳 YYYY-MM-DD（台灣日期）
+    const y = wednesday.getUTCFullYear();
+    const m = String(wednesday.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(wednesday.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+// 產生週次標籤，例如 "3月5日 - 3月11日"（週三到下週二，共7天）
 function getWeekRangeString(weekStart: string): string {
-    const date = new Date(weekStart + 'T00:00:00');
-    const startOfYear = new Date(date.getFullYear(), 0, 1);
-    const weekNum = Math.ceil(
-        ((date.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7
-    );
-    return `${date.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+    const [y, m, d] = weekStart.split('-').map(Number);
+    const start = new Date(y, m - 1, d);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return `${start.getMonth() + 1}月${start.getDate()}日 - ${end.getMonth() + 1}月${end.getDate()}日`;
 }
 
 Deno.serve(async (_req) => {
@@ -46,48 +64,59 @@ Deno.serve(async (_req) => {
             return new Response(JSON.stringify({ message: 'No employees found' }), { status: 200 });
         }
 
-        // 2. 查出本週已有計畫的員工
+        // 2. 查出本週已有計畫的員工（含狀態）
         const { data: existingPlans, error: planError } = await supabase
             .from('weekly_plans')
-            .select('user_id')
+            .select('user_id, status')
             .eq('week_start_date', currentWeekStart);
 
         if (planError) throw planError;
 
-        const existingUserIds = new Set(existingPlans?.map((p: any) => p.user_id) || []);
-        const missingEmployees = employees.filter((emp: any) => !existingUserIds.has(emp.id));
+        // 將員工分為三組：
+        // - noPlans：完全沒有計畫 → 建立草稿 + 寄提醒信
+        // - draftOnly：有草稿但尚未提交 → 只寄提醒信（不建立新計畫）
+        // - submitted：已提交（pending/approved/rejected）→ 完全略過
+        const planMap = new Map((existingPlans || []).map((p: any) => [p.user_id, p.status]));
 
-        console.log(`[auto-generate-plans] ${employees.length} employees total, ${missingEmployees.length} missing plans`);
+        const noPlans = employees.filter((emp: any) => !planMap.has(emp.id));
+        const draftOnly = employees.filter((emp: any) => planMap.get(emp.id) === 'draft');
+        const needEmail = [...noPlans, ...draftOnly];
 
-        if (missingEmployees.length === 0) {
-            return new Response(JSON.stringify({ message: 'All employees already have plans', week: currentWeekRange }), { status: 200 });
+        console.log(`[auto-generate-plans] ${employees.length} employees total | no plan: ${noPlans.length} | draft: ${draftOnly.length} | submitted: ${employees.length - noPlans.length - draftOnly.length}`);
+
+        // 3. 批次建立空白草稿（只針對完全沒有計畫的員工）
+        if (noPlans.length > 0) {
+            const draftPlans = noPlans.map((emp: any) => ({
+                id: crypto.randomUUID(),
+                user_id: emp.id,
+                week_start_date: currentWeekStart,
+                week_range_label: currentWeekRange,
+                status: 'draft',
+                submitted_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                total_hours: 0,
+                key_ratio: 0,
+                is_unlocked: false,
+            }));
+
+            const { error: insertError } = await supabase
+                .from('weekly_plans')
+                .insert(draftPlans);
+
+            if (insertError) throw insertError;
+            console.log(`[auto-generate-plans] Inserted ${draftPlans.length} draft plans`);
         }
 
-        // 3. 批次建立空白草稿
-        const draftPlans = missingEmployees.map((emp: any) => ({
-            id: crypto.randomUUID(),
-            user_id: emp.id,
-            week_start_date: currentWeekStart,
-            week_range_label: currentWeekRange,
-            status: 'draft',
-            submitted_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            total_hours: 0,
-            key_ratio: 0,
-            is_unlocked: false,
-        }));
+        // 4. 發送 Email 通知（沒有計畫 + 有草稿但未提交的員工）
+        if (needEmail.length === 0) {
+            return new Response(JSON.stringify({
+                message: 'All employees have submitted plans, no action needed',
+                week: currentWeekRange,
+            }), { status: 200 });
+        }
 
-        const { error: insertError } = await supabase
-            .from('weekly_plans')
-            .insert(draftPlans);
-
-        if (insertError) throw insertError;
-
-        console.log(`[auto-generate-plans] Inserted ${draftPlans.length} draft plans`);
-
-        // 4. 發送 Email 通知（使用 Resend）
         const emailResults = await Promise.allSettled(
-            missingEmployees.map(async (emp: any) => {
+            needEmail.map(async (emp: any) => {
                 if (!emp.email) return;
                 const res = await fetch('https://api.resend.com/emails', {
                     method: 'POST',
@@ -125,7 +154,8 @@ Deno.serve(async (_req) => {
         return new Response(JSON.stringify({
             message: 'Done',
             week: currentWeekRange,
-            plansCreated: draftPlans.length,
+            plansCreated: noPlans.length,
+            draftReminders: draftOnly.length,
             emailsSent: successCount,
         }), {
             status: 200,

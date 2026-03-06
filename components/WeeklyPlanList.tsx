@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { User, WeeklyPlanSubmission } from '../types';
 import { Header } from './Header';
-import { Plus, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Edit3, AlertCircle, Calendar, RotateCcw, FileEdit, MessageSquare, AlertTriangle } from 'lucide-react';
+import { Plus, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Edit3, Calendar, RotateCcw, FileEdit, MessageSquare } from 'lucide-react';
+
 import { useToast } from '../components/Toast';
 import { COMPANY_NAME } from '../constants';
 import { getCurrentWeekStart, addDays, getWeekRangeString } from '../utils/dateUtils';
@@ -29,9 +30,9 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
     const [createWeekType, setCreateWeekType] = useState<'current' | 'next'>('current');
     const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
 
+
     const currentWeekStart = getCurrentWeekStart();
     const nextWeekStart = addDays(currentWeekStart, 7);
-    const lastWeekStart = addDays(currentWeekStart, -7);
 
     // Sort plans by weekStart desc
     const sortedPlans = useMemo(() => {
@@ -39,15 +40,8 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
     }, [plans]);
 
     const currentPlan = sortedPlans.find(p => p.weekStart === currentWeekStart);
-    const historyPlans = sortedPlans.filter(p => p.weekStart !== currentWeekStart);
-
-    // Check for missing last week plan
-    const lastWeekPlan = plans.find(p => p.weekStart === lastWeekStart);
-    const isLastWeekMissing = !lastWeekPlan;
-
-    // Grace period logic (e.g. allow catch-up until Friday)
-    const today = new Date();
-    const isGracePeriod = today.getDay() <= 5;
+    // 歷史紀錄：非本週，僅顯示最近 5 筆
+    const historyPlans = sortedPlans.filter(p => p.weekStart !== currentWeekStart).slice(0, 5);
 
     const toggleExpand = (planId: string) => {
         setExpandedPlanId(prev => prev === planId ? null : planId);
@@ -56,10 +50,6 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
     const handleCreateClick = () => {
         const targetDate = createWeekType === 'current' ? currentWeekStart : nextWeekStart;
         onCreate(targetDate);
-    };
-
-    const handleCatchUpClick = () => {
-        onCreate(lastWeekStart);
     };
 
     const handleWithdrawClick = (e: React.MouseEvent, plan: WeeklyPlanSubmission) => {
@@ -87,29 +77,17 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
         setSelectedPlanForWithdraw(null);
     };
 
-    // Tag helper
+    // Tag helper：只標注「提前提交」
     const getSubmissionTag = (plan: WeeklyPlanSubmission) => {
-        const submitDate = plan.submittedAt.slice(0, 10); // YYYY-MM-DD
-        const startDate = plan.weekStart;    // YYYY-MM-DD
-
-        // Early: Submitted before the week started
+        const submitDate = plan.submittedAt.slice(0, 10);
+        const startDate = plan.weekStart;
         if (submitDate < startDate) {
             return <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 ml-2">提前提交</span>;
-        }
-
-        // Late: Adjusted logic - if submitted after Friday (more than 2 days after Wednesday start)
-        const diff = (new Date(submitDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24);
-        if (diff > 2) {
-            return <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 ml-2">補交</span>;
         }
         return null;
     };
 
-    const renderStatusBadge = (status: string, isLocked: boolean = false) => {
-        if (isLocked) {
-            return <span className="flex items-center text-red-600 font-bold text-sm"><AlertTriangle size={14} className="mr-1" /> 本週未建立</span>;
-        }
-
+    const renderStatusBadge = (status: string) => {
         switch (status) {
             case 'pending': return <span className="flex items-center text-gray-500 font-bold text-sm"><Clock size={14} className="mr-1" /> 待審核</span>;
             case 'approved': return <span className="flex items-center text-green-600 font-bold text-sm"><CheckCircle size={14} className="mr-1" /> 已通過</span>;
@@ -120,23 +98,19 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
     };
 
 
+
     const renderPlanCard = (plan: WeeklyPlanSubmission) => {
         const isExpanded = expandedPlanId === plan.id;
-
-        // Determine if this draft plan is locked (past grace period and not unlocked by admin)
-        const todayDay = new Date().getDay();
-        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
-        const isLocked = plan.status === 'draft' && isPastGracePeriod && !plan.isUnlocked;
 
         return (
             <div key={plan.id} className={`bg-white rounded-xl shadow-sm border transition-all duration-200 ${isExpanded ? 'border-blue-300 ring-1 ring-blue-100' : 'border-gray-200 hover:shadow-md'}`}>
                 {/* Summary Header - Click to Toggle */}
                 <div
                     onClick={() => toggleExpand(plan.id)}
-                    className={`p-4 cursor-pointer flex justify-between items-center ${isLocked ? 'bg-red-50/30' : ''}`}
+                    className="p-4 cursor-pointer flex justify-between items-center"
                 >
                     <div className="flex items-center gap-3">
-                        <div className={`w-1.5 h-12 rounded-full ${isLocked ? 'bg-red-400' : plan.status === 'approved' ? 'bg-green-500' : plan.status === 'rejected' ? 'bg-red-500' : plan.status === 'draft' ? 'bg-gray-300' : 'bg-gray-400'}`}></div>
+                        <div className={`w-1.5 h-12 rounded-full ${plan.status === 'approved' ? 'bg-green-500' : plan.status === 'rejected' ? 'bg-red-500' : plan.status === 'draft' ? 'bg-gray-300' : 'bg-gray-400'}`}></div>
                         <div>
                             <div className="flex items-center">
                                 <h3 className="text-lg font-bold text-gray-800">{plan.weekRange}</h3>
@@ -158,7 +132,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
-                        {renderStatusBadge(plan.status, isLocked)}
+                        {renderStatusBadge(plan.status)}
                         {isExpanded ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
                     </div>
                 </div>
@@ -235,7 +209,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                             )}
 
                             {/* Draft -> Continue Editing */}
-                            {plan.status === 'draft' && !isLocked && (
+                            {plan.status === 'draft' && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -245,12 +219,6 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                                 >
                                     <Edit3 size={16} className="mr-2" /> 繼續編輯
                                 </button>
-                            )}
-
-                            {plan.status === 'draft' && isLocked && (
-                                <div className="text-sm font-bold text-red-500 flex items-center bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
-                                    <AlertTriangle size={16} className="mr-1.5" /> 本週週計畫尚未建立，如需填寫請聯繫主管。
-                                </div>
                             )}
 
                             {/* Rejected -> Modify */}
@@ -311,21 +279,8 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
                         </div>
                     </div>
 
-                    {/* Catch-up Logic */}
-                    {!currentPlan && isLastWeekMissing && isGracePeriod && (
-                        <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse-slow">
-                            <div className="flex items-center text-orange-800 text-sm font-medium">
-                                <AlertCircle size={18} className="mr-2 text-orange-600" />
-                                偵測到上週尚未填寫，可在週五前補交。
-                            </div>
-                            <button
-                                onClick={handleCatchUpClick}
-                                className="text-sm bg-orange-100 text-orange-700 border border-orange-300 px-3 py-1.5 rounded hover:bg-orange-200 transition font-bold whitespace-nowrap"
-                            >
-                                補交上週週計畫
-                            </button>
-                        </div>
-                    )}
+
+
                 </div>
 
                 {/* --- Current Week Status --- */}
