@@ -261,9 +261,9 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
     const renderStatusBadge = (status: string, isPastGracePeriod: boolean = false, isUnlocked: boolean = false) => {
         if (status === 'draft') {
             if (isPastGracePeriod && !isUnlocked) {
-                return <span className="flex items-center bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold"><AlertTriangle size={12} className="mr-1" /> 已逾期鎖定</span>;
+                return <span className="flex items-center bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold"><AlertTriangle size={12} className="mr-1" /> 本週未建立</span>;
             }
-            return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><FileText size={12} className="mr-1" /> 草稿</span>;
+            return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><FileText size={12} className="mr-1" /> 本週未建立</span>;
         }
 
         switch (status) {
@@ -335,7 +335,13 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                         edits = plan.lastWeekReview?.tasks;
                     }
 
-                    if (!edits || edits.length === 0) return null;
+                    if (!edits || edits.length === 0) return (
+                        <div className="mb-6 bg-gray-50 rounded-xl border border-dashed border-gray-300 p-5 text-center">
+                            <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                            <p className="text-sm font-medium text-gray-400">上週週計畫無紀錄</p>
+                            <p className="text-xs text-gray-400 mt-1">員工上週未建立週計畫，無法顯示檢討內容。</p>
+                        </div>
+                    );
 
                     return (
                         <div className="mb-6 bg-orange-50 rounded-xl border border-orange-200 shadow-sm overflow-hidden">
@@ -440,10 +446,10 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                 {plan.status === 'draft' ? (
                     <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 text-center mb-6">
                         <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <h4 className="font-bold text-gray-800 mb-2">本週計畫尚未建立</h4>
+                        <h4 className="font-bold text-gray-800 mb-2">本週週計畫尚未建立</h4>
                         <p className="text-gray-500 text-sm mb-4">
                             系統已自動產生檢討表單。您可先於上方「上週週計畫檢討」回填進度紀錄。
-                            {isLockedDraft && " 該名員工已逾期，若有特例需求，可重新開放權限。"}
+                            {isLockedDraft && " 該名員工尚未建立本週計畫，若有特例需求，可重新開放權限。"}
                         </p>
 
                         {isLockedDraft && user.isAdmin && (

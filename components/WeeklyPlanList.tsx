@@ -107,7 +107,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
 
     const renderStatusBadge = (status: string, isLocked: boolean = false) => {
         if (isLocked) {
-            return <span className="flex items-center text-red-600 font-bold text-sm"><AlertTriangle size={14} className="mr-1" /> 已逾期 (鎖定)</span>;
+            return <span className="flex items-center text-red-600 font-bold text-sm"><AlertTriangle size={14} className="mr-1" /> 本週未建立</span>;
         }
 
         switch (status) {
@@ -249,7 +249,7 @@ export const WeeklyPlanList: React.FC<WeeklyPlanListProps> = ({
 
                             {plan.status === 'draft' && isLocked && (
                                 <div className="text-sm font-bold text-red-500 flex items-center bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
-                                    <AlertTriangle size={16} className="mr-1.5" /> 此計畫已逾期鎖定，請聯繫主管重新開放權限。
+                                    <AlertTriangle size={16} className="mr-1.5" /> 本週週計畫尚未建立，如需填寫請聯繫主管。
                                 </div>
                             )}
 
