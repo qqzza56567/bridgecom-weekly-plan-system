@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { User, WeeklyPlanSubmission, PlanStatus, LastWeekTaskReview, DailyPlanSubmission } from '../types';
 import { COMPANY_NAME } from '../constants';
-import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, AlertTriangle, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+
 
 interface ReviewProps {
     user: User;
@@ -244,28 +245,12 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
         setExpandedPlanId(null);
     };
 
-    const handleUnlockClick = async (plan: WeeklyPlanSubmission) => {
-        try {
-            await PlanService.unlockPlan(plan.id);
-            // Update local state
-            const updatedPlan = { ...plan, isUnlocked: true };
-            await onUpdatePlan(updatedPlan);
-            success("已為該員工重新開放填寫權限");
-        } catch (error) {
-            console.error("Failed to unlock plan:", error);
-            // toast.error("重新開放權限失敗"); 
-        }
-    };
 
-    // Helper to render Status Badge
-    const renderStatusBadge = (status: string, isPastGracePeriod: boolean = false, isUnlocked: boolean = false) => {
+
+    const renderStatusBadge = (status: string) => {
         if (status === 'draft') {
-            if (isPastGracePeriod && !isUnlocked) {
-                return <span className="flex items-center bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold"><AlertTriangle size={12} className="mr-1" /> 本週未建立</span>;
-            }
-            return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><FileText size={12} className="mr-1" /> 本週未建立</span>;
+            return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><FileText size={12} className="mr-1" /> 草稿</span>;
         }
-
         switch (status) {
             case 'pending': return <span className="flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold"><Clock size={12} className="mr-1" /> 待審核</span>;
             case 'approved': return <span className="flex items-center bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold"><CheckCircle size={12} className="mr-1" /> 已通過</span>;
@@ -274,11 +259,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
         }
     };
 
-    // 1. Render Full Expanded Card (For Pending or Manually Expanded)
     const renderFullPlanCard = (plan: WeeklyPlanSubmission) => {
-        const todayDay = new Date().getDay();
-        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
-        const isLockedDraft = plan.status === 'draft' && isPastGracePeriod && !plan.isUnlocked;
 
         return (
             <div key={plan.id} className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm mb-4 border-l-4 border-l-blue-500">
@@ -287,7 +268,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                     <div>
                         <div className="flex items-center gap-3 mb-1">
                             <span className="font-bold text-gray-800 text-lg">{plan.weekRange}</span>
-                            {renderStatusBadge(plan.status, isPastGracePeriod, plan.isUnlocked || false)}
+                            {renderStatusBadge(plan.status)}
                         </div>
                         <span className="text-xs text-gray-500">提交於 {plan.submittedAt}</span>
                     </div>
@@ -442,24 +423,13 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                     );
                 })()}
 
-                {/* If it's a drafted skeleton plan, hide the current weeks tasks and instead show a warning / unlock button */}
                 {plan.status === 'draft' ? (
                     <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 text-center mb-6">
                         <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                         <h4 className="font-bold text-gray-800 mb-2">本週週計畫尚未建立</h4>
                         <p className="text-gray-500 text-sm mb-4">
-                            系統已自動產生檢討表單。您可先於上方「上週週計畫檢討」回填進度紀錄。
-                            {isLockedDraft && " 該名員工尚未建立本週計畫，若有特例需求，可重新開放權限。"}
+                            員工尚未填寫本週計畫，已顯示上週進度供您參考。
                         </p>
-
-                        {isLockedDraft && user.isAdmin && (
-                            <button
-                                onClick={() => handleUnlockClick(plan)}
-                                className="inline-flex items-center bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg font-bold text-sm hover:bg-red-100 transition shadow-sm"
-                            >
-                                🔓 重新開放填寫權限
-                            </button>
-                        )}
                     </div>
                 ) : (
                     <>
@@ -558,8 +528,6 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
 
     // 2. Render Compact Row (For History Items)
     const renderCompactRow = (plan: WeeklyPlanSubmission) => {
-        const todayDay = new Date().getDay();
-        const isPastGracePeriod = (todayDay === 5 || todayDay === 6 || todayDay === 0 || todayDay === 1 || todayDay === 2);
 
         return (
             <div key={plan.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3 flex items-center justify-between hover:bg-gray-50 transition">
@@ -568,7 +536,7 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                         <span className="font-bold text-gray-800">{plan.weekRange}</span>
                         <span className="text-xs text-gray-500">提交: {plan.submittedAt}</span>
                     </div>
-                    {renderStatusBadge(plan.status, isPastGracePeriod, plan.isUnlocked || false)}
+                    {renderStatusBadge(plan.status)}
                 </div>
 
                 <button
