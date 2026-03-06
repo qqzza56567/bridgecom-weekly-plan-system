@@ -104,7 +104,7 @@ Deno.serve(async (_req) => {
                 <h2 style="color: #1d4ed8;">📋 週計畫填寫提醒</h2>
                 <p>您好，<strong>${emp.full_name}</strong>，</p>
                 <p>系統已為您建立 <strong>${currentWeekRange}</strong> 的週計畫表單，請記得盡早填寫本週計畫內容。</p>
-                <p>系統填寫截止時間為本週四晚間，逾時將無法自行填寫。</p>
+                <p>請於下班前完成。</p>
                 <a href="${Deno.env.get('APP_URL') || 'https://yourapp.com'}" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#1d4ed8;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
                   前往填寫週計畫
                 </a>
