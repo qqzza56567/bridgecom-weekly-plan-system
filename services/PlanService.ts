@@ -109,7 +109,7 @@ export const PlanService = {
             // 0. Safety check: ensure we use the existing ID if a plan for this user/week already exists
             const { data: existingPlans, error: selectError } = await supabase
                 .from('weekly_plans')
-                .select('id')
+                .select('id, status')
                 .eq('user_id', plan.userId)
                 .eq('week_start_date', plan.weekStart)
                 .limit(1);
@@ -120,10 +120,7 @@ export const PlanService = {
 
             const existingPlan = existingPlans?.[0];
             const finalId = existingPlan?.id || plan.id;
-            if (existingPlan && existingPlan.id !== plan.id) {
-                // This case indicates a client-side ID mismatch, but we prioritize the DB's existing ID.
-                // No need to warn, just proceed with the correct ID.
-            }
+            const wasRejected = existingPlan?.status === 'rejected'; // 用於判斷是否為重新提交
 
             // 1. Upsert Plan
             const planData: Partial<DbWeeklyPlan> = {
@@ -219,6 +216,44 @@ export const PlanService = {
                 await Promise.all(reviewUpdates);
             }
 
+            // 4. Write review history (submit / resubmit)
+            if (plan.status === 'pending') {
+                const action = wasRejected ? 'resubmitted' : 'submitted';
+                await supabase.from('review_history').insert({
+                    plan_id: finalId,
+                    action,
+                    actor_id: plan.userId,
+                    actor_name: plan.userName,
+                    comment: null
+                });
+
+                // 若為重新提交，查詢主管並發 Email 通知
+                if (wasRejected) {
+                    try {
+                        const { data: relation } = await supabase
+                            .from('user_relationships')
+                            .select('manager_id')
+                            .eq('subordinate_id', plan.userId)
+                            .limit(1)
+                            .single();
+
+                        if (relation?.manager_id) {
+                            await supabase.functions.invoke('notify-manager', {
+                                body: {
+                                    planId: finalId,
+                                    employeeName: plan.userName,
+                                    weekRange: plan.weekRange,
+                                    managerId: relation.manager_id
+                                }
+                            });
+                        }
+                    } catch (notifyErr) {
+                        // 通知失敗不中斷主流程
+                        console.warn('[PlanService] Manager notification failed:', notifyErr);
+                    }
+                }
+            }
+
             return finalId;
 
         } catch (error) {
@@ -231,7 +266,7 @@ export const PlanService = {
      * Update Plan during Review (Status, Comment, Last Week Review)
      * Now also syncs review stats to original tasks upon approval.
      */
-    async updateReviewData(planId: string, status: PlanStatus, comment: string, lastWeekReview: any): Promise<void> {
+    async updateReviewData(planId: string, status: PlanStatus, comment: string, lastWeekReview: any, reviewerId: string, reviewerName: string): Promise<void> {
         const { error } = await supabase
             .from('weekly_plans')
             .update({
@@ -243,6 +278,15 @@ export const PlanService = {
             .eq('id', planId);
 
         if (error) throw error;
+
+        // Write review history
+        await supabase.from('review_history').insert({
+            plan_id: planId,
+            action: status, // 'approved' | 'rejected'
+            actor_id: reviewerId,
+            actor_name: reviewerName,
+            comment: comment || null
+        });
 
         // If approved, sync Last Week Review stats back to the ORIGINAL tasks (for History View)
         if (status === 'approved' && lastWeekReview && lastWeekReview.tasks && lastWeekReview.tasks.length > 0) {
@@ -271,6 +315,7 @@ export const PlanService = {
             await Promise.all(reviewUpdates);
         }
     },
+
 
     /**
      * Save AI Execution report to db

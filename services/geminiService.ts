@@ -1,11 +1,32 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { WeeklyPlanSubmission, MonthlyReportData } from "../types";
+import { supabase } from "../supabaseClient";
 
-// WARNING: Frontend API keys are exposed to the client. 
-// For production, it is strongly recommended to move this logic to a Supabase Edge Function 
-// or a proxy server to keep your API key secure.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-const genAI = new GoogleGenerativeAI(apiKey);
+// ─────────────────────────────────────────────────────────────
+// Gemini Proxy Helper
+//
+// All Gemini API calls now go through a Supabase Edge Function
+// (gemini-proxy). The actual GEMINI_API_KEY lives only on the
+// server side and is never exposed to the browser.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Calls the gemini-proxy Edge Function with the given action and prompt.
+ * Returns the parsed JSON result from Gemini.
+ */
+async function callGeminiProxy<T>(action: string, prompt: string): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('gemini-proxy', {
+    body: { action, prompt }
+  });
+
+  if (error) {
+    throw new Error(`Gemini proxy error [${action}]: ${error.message}`);
+  }
+
+  return data.result as T;
+}
+
+/** True when running locally without a real Supabase project (CI / dev mock mode). */
+const isMockMode = import.meta.env.DEV && !import.meta.env.VITE_SUPABASE_URL;
 
 export interface SmartValidationResult {
   index: number;
@@ -14,40 +35,10 @@ export interface SmartValidationResult {
 }
 
 export const validateSmartGoals = async (goals: string[]): Promise<SmartValidationResult[]> => {
-  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
-
-  console.log("Checking API Key...", apiKey ? "Key exists" : "Key is empty");
-  if (isPlaceholder) {
-    console.warn("Gemini API Key is placeholder or missing. Mode: MOCK");
-    // Return a mock result that accepts all goals for smooth development
-    return goals.map((_, i) => ({
-      index: i,
-      isValid: true,
-      feedback: "本地測試模式：驗證已跳過。"
-    }));
+  if (isMockMode) {
+    console.warn("[geminiService] MOCK MODE: skipping validateSmartGoals");
+    return goals.map((_, i) => ({ index: i, isValid: true, feedback: "本地測試模式：驗證已跳過。" }));
   }
-
-  const modelId = "gemini-2.0-flash"; // 升級為 2.0-flash 版本
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    generationConfig: {
-      temperature: 0.0, // 零隨機性，確保結果一致
-      topP: 0.95,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.ARRAY,
-        items: {
-          type: SchemaType.OBJECT,
-          properties: {
-            index: { type: SchemaType.INTEGER },
-            isValid: { type: SchemaType.BOOLEAN },
-            feedback: { type: SchemaType.STRING }
-          },
-          required: ["index", "isValid", "feedback"]
-        }
-      }
-    }
-  });
 
   const prompt = `
     你是一位嚴格且實用的生產力教練。請分析這三個「每日目標」是否符合具體工作產出的標準。
@@ -77,16 +68,9 @@ export const validateSmartGoals = async (goals: string[]): Promise<SmartValidati
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) return [];
-
-    return JSON.parse(text) as SmartValidationResult[];
-
+    return await callGeminiProxy<SmartValidationResult[]>('validateSmartGoals', prompt);
   } catch (error) {
-    console.error("Gemini validation error:", error);
+    console.error("Gemini validateSmartGoals error:", error);
     return goals.map((_, i) => ({
       index: i,
       isValid: false,
@@ -94,6 +78,7 @@ export const validateSmartGoals = async (goals: string[]): Promise<SmartValidati
     }));
   }
 };
+
 
 export interface WeeklyTaskValidationResult {
   taskId: string;
@@ -104,7 +89,7 @@ export interface WeeklyTaskValidationResult {
 }
 
 export const validateWeeklyTask = async (taskId: string, name: string, outcome: string): Promise<WeeklyTaskValidationResult> => {
-  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+  const isPlaceholder = isMockMode;
 
   if (isPlaceholder) {
     console.warn("Gemini API Key is placeholder or missing. Mode: MOCK");
@@ -117,23 +102,7 @@ export const validateWeeklyTask = async (taskId: string, name: string, outcome: 
     };
   }
 
-  const modelId = "gemini-2.0-flash";
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    generationConfig: {
-      temperature: 0.0,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          status: { type: SchemaType.STRING, enum: ["valid", "critical"] },
-          nameFeedback: { type: SchemaType.STRING, nullable: true },
-          outcomeFeedback: { type: SchemaType.STRING, nullable: true }
-        },
-        required: ["status"]
-      }
-    }
-  });
+  // Schema constraints are now handled by explicit prompts and proxy's JSON mimeType.
 
   const prompt = `
     你是一位專業的績效管理教練。請驗證以下週計畫任務，並根據 **S.M.A.R.T. 原則** (Specific & Measurable) 與**字數規範**給予紅綠燈評價。
@@ -166,13 +135,8 @@ export const validateWeeklyTask = async (taskId: string, name: string, outcome: 
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) throw new Error("No response from AI");
-
-    const parsedResult = JSON.parse(text);
+    const parsedResult = await callGeminiProxy<any>('validateWeeklyTask', prompt);
+    
     return {
       taskId,
       isValid: parsedResult.status !== 'critical',
@@ -199,7 +163,7 @@ export interface PlanValidationResult {
 }
 
 export const validatePlanContent = async (tasks: { id: string; name: string; outcome: string }[]): Promise<PlanValidationResult> => {
-  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+  const isPlaceholder = isMockMode;
 
   if (isPlaceholder) {
     console.warn("Gemini API Key is placeholder. Mode: MOCK BATCH");
@@ -216,33 +180,7 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
     return { isValid: true, results };
   }
 
-  const modelId = "gemini-2.0-flash";
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    generationConfig: {
-      temperature: 0.0,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          results: {
-            type: SchemaType.ARRAY,
-            items: {
-              type: SchemaType.OBJECT,
-              properties: {
-                id: { type: SchemaType.STRING },
-                status: { type: SchemaType.STRING, enum: ["valid", "critical"] },
-                nameFeedback: { type: SchemaType.STRING, nullable: true },
-                outcomeFeedback: { type: SchemaType.STRING, nullable: true }
-              },
-              required: ["id", "status"]
-            }
-          }
-        },
-        required: ["results"]
-      }
-    }
-  });
+  // Schema constraints are now handled by explicit prompts and proxy's JSON mimeType.
 
   const tasksJson = JSON.stringify(tasks.map(t => ({ id: t.id, name: t.name, outcome: t.outcome })));
 
@@ -287,28 +225,25 @@ export const validatePlanContent = async (tasks: { id: string; name: string; out
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) throw new Error("No response from AI");
-
-    const parsed = JSON.parse(text);
+    const parsed = await callGeminiProxy<any>('validatePlanContent', prompt);
+    
     const resultMap: Record<string, WeeklyTaskValidationResult> = {};
     let allValid = true;
 
-    parsed.results.forEach((item: any) => {
-      // Critical is the only blocking state
-      if (item.status === 'critical') allValid = false;
+    if (parsed && Array.isArray(parsed.results)) {
+      parsed.results.forEach((item: any) => {
+        // Critical is the only blocking state
+        if (item.status === 'critical') allValid = false;
 
-      resultMap[item.id] = {
-        taskId: item.id,
-        isValid: item.status !== 'critical',
-        status: item.status,
-        nameFeedback: item.nameFeedback || undefined,
-        outcomeFeedback: item.outcomeFeedback || undefined
-      };
-    });
+        resultMap[item.id] = {
+          taskId: item.id,
+          isValid: item.status !== 'critical',
+          status: item.status,
+          nameFeedback: item.nameFeedback || undefined,
+          outcomeFeedback: item.outcomeFeedback || undefined
+        };
+      });
+    }
 
     return { isValid: allValid, results: resultMap };
 
@@ -351,7 +286,7 @@ export const generateWeeklyReport = async (
   weeklyTasks: { name: string; outcome: string; priority: string }[],
   dailyPlans: { date: string; goals: string[] }[]
 ): Promise<WeeklyReportData | null> => {
-  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+  const isPlaceholder = isMockMode;
 
   if (isPlaceholder) {
     console.warn("Gemini API Key is placeholder. Mode: MOCK REPORT");
@@ -371,48 +306,7 @@ export const generateWeeklyReport = async (
     };
   }
 
-  const modelId = "gemini-2.0-flash";
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          statusTheme: { type: SchemaType.STRING, enum: ["red", "yellow", "green"] },
-          statusText: { type: SchemaType.STRING },
-          totalTasks: { type: SchemaType.INTEGER },
-          unplannedTasks: { type: SchemaType.INTEGER },
-          unplannedRatio: { type: SchemaType.INTEGER },
-          alignedTasks: { type: SchemaType.INTEGER },
-          taskEvaluations: {
-            type: SchemaType.ARRAY,
-            items: {
-              type: SchemaType.OBJECT,
-              properties: {
-                date: { type: SchemaType.STRING },
-                task: { type: SchemaType.STRING },
-                isAligned: { type: SchemaType.BOOLEAN },
-                reason: { type: SchemaType.STRING }
-              },
-              required: ["date", "task", "isAligned", "reason"]
-            }
-          },
-          ai: {
-            type: SchemaType.OBJECT,
-            properties: {
-              critical: { type: SchemaType.STRING, nullable: true },
-              suggestion: { type: SchemaType.STRING },
-              highlight: { type: SchemaType.STRING, nullable: true }
-            },
-            required: ["suggestion"]
-          }
-        },
-        required: ["statusTheme", "statusText", "totalTasks", "unplannedTasks", "unplannedRatio", "alignedTasks", "taskEvaluations", "ai"]
-      }
-    }
-  });
+  // Schema constraints are now handled by explicit prompts and proxy's JSON mimeType.
 
   const prompt = `
     你是一位專業的人力資源與績效管理顧問。
@@ -443,13 +337,7 @@ export const generateWeeklyReport = async (
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) throw new Error("No response from AI");
-
-    return JSON.parse(text) as WeeklyReportData;
+    return await callGeminiProxy<WeeklyReportData>('generateWeeklyReport', prompt);
   } catch (error) {
     console.error("Gemini weekly report error:", error);
     return null;
@@ -457,7 +345,7 @@ export const generateWeeklyReport = async (
 };
 
 export const generateMonthlyExecutiveReport = async (userName: string, userRole: string, monthLabel: string, plans: WeeklyPlanSubmission[]): Promise<MonthlyReportData | null> => {
-  const isPlaceholder = !apiKey || apiKey === 'PLACEHOLDER_API_KEY';
+  const isPlaceholder = isMockMode;
 
   if (isPlaceholder) {
     return {
@@ -486,6 +374,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   let totalEstimatedHours = 0;
   let totalActualHours = 0;
   let planTaskCountForCompletion = 0; // 用於計算完成率的基數
+  let weeksWithAiReport = 0; // 有 AI 週報的週數，用於計算數據品質
 
   for (const p of plans) {
     if (p.aiReport) {
@@ -493,17 +382,11 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
       totalTasksCount += (p.aiReport.totalTasks || 0);
       alignedTasks += (p.aiReport.alignedTasks || 0);
       unplannedTasks += (p.aiReport.unplannedTasks || 0);
-    } else {
-      // 若無，則退回以週計畫清單（規劃階段）的任務作為基數
-      for (const t of p.tasks) {
-        totalTasksCount++;
-        if (t.category === '關鍵職責') {
-          alignedTasks++;
-        } else {
-          unplannedTasks++;
-        }
-      }
+      weeksWithAiReport++;
     }
+    // ✅ 修正：若無 AI 週報，不再以「類別」錯誤推算插單數。
+    // 原因：「其他事項」≠「臨時插單」，員工可能事先規劃行政工作。
+    // 無數据的週次將體現在 dataQuality 指標中，於 UI 顯示警告。
 
     // 完成率與工時偏差這類「原定計畫執行度」指標，則是絕對看 p.tasks
     for (const t of p.tasks) {
@@ -516,7 +399,12 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
     }
   }
 
-  // 統一由系統客觀計算，避免出現0項插單卻有28%插單率的自相矛盾情況
+  // dataQuality: 有 AI 週報的週數 / 總週數，決定插單率數據是否可信
+  const dataQuality = plans.length > 0
+    ? Math.round((weeksWithAiReport / plans.length) * 100)
+    : 0;
+
+  // 統一由系統客觀計算；若 dataQuality=0 則插單率無意義（保留為 0 供 UI 判斷隱藏）
   const averageUnplannedRatio = totalTasksCount > 0 ? Math.round((unplannedTasks / totalTasksCount) * 100) : 0;
   const completionRate = planTaskCountForCompletion > 0 ? Math.round((highCompletionTasks / planTaskCountForCompletion) * 100) : 0;
 
@@ -527,6 +415,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
     : 0;
 
   const calculatedMetrics = {
+    dataQuality,
     strategicFocus: {
       averageUnplannedRatio,
       alignedTasks,
@@ -538,31 +427,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
     }
   };
 
-  const modelId = "gemini-2.0-flash";
-  const model = genAI.getGenerativeModel({
-    model: modelId,
-    generationConfig: {
-      temperature: 0.0,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          topAchievements: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING },
-            description: "1到3個具體的高光成就"
-          },
-          systemicObstacles: {
-            type: SchemaType.STRING,
-            nullable: true,
-            description: "系統性風險、長期推力阻礙或過勞/倦怠警訊"
-          },
-          managementAction: { type: SchemaType.STRING, description: "給高階主管的人力資源行動建議" }
-        },
-        required: ["topAchievements", "systemicObstacles", "managementAction"]
-      }
-    }
-  });
+  // Schema constraints are now handled by explicit prompts and proxy's JSON mimeType.
 
   // 整理用於分析的精簡資料，避免爆 Token
   const monthDataSummary = plans.map(p => {
@@ -616,13 +481,7 @@ export const generateMonthlyExecutiveReport = async (userName: string, userRole:
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) throw new Error("No response from AI");
-
-    const aiTextReport = JSON.parse(text);
+    const aiTextReport = await callGeminiProxy<any>('generateMonthlyReport', prompt);
 
     // 合併 TypeScript 計算出的精確數據與 AI 生成的文字洞察
     return {

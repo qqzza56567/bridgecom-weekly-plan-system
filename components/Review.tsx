@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, WeeklyPlanSubmission, PlanStatus, LastWeekTaskReview, DailyPlanSubmission } from '../types';
 import { COMPANY_NAME } from '../constants';
-import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Edit3, BarChart2, FileText, Sparkles, Loader2, RefreshCw, History } from 'lucide-react';
 
 
 interface ReviewProps {
@@ -18,6 +18,7 @@ import { useToast } from '../components/Toast';
 import { DailyPlanService } from '../services/DailyPlanService';
 import { PlanService } from '../services/PlanService';
 import { generateWeeklyReport, WeeklyReportData } from '../services/geminiService';
+import { supabase } from '../supabaseClient';
 
 export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpdatePlan, onBack }) => {
     const { success } = useToast();
@@ -65,6 +66,35 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
     const [showRawData, setShowRawData] = useState<Record<string, boolean>>({});
     const [rawDailyPlans, setRawDailyPlans] = useState<Record<string, DailyPlanSubmission[]>>({});
     const [isLoadingRaw, setIsLoadingRaw] = useState<Record<string, boolean>>({});
+
+    // Review History State
+    interface ReviewHistoryItem {
+        id: string;
+        action: string;
+        actor_name: string;
+        comment: string | null;
+        created_at: string;
+    }
+    const [reviewHistory, setReviewHistory] = useState<Record<string, ReviewHistoryItem[]>>({});
+
+    const fetchReviewHistory = async (planId: string) => {
+        if (reviewHistory[planId]) return; // Already loaded
+        const { data, error } = await supabase
+            .from('review_history')
+            .select('id, action, actor_name, comment, created_at')
+            .eq('plan_id', planId)
+            .order('created_at', { ascending: true });
+        if (!error && data) {
+            setReviewHistory(prev => ({ ...prev, [planId]: data }));
+        }
+    };
+
+    // Fetch history when a plan is expanded
+    useEffect(() => {
+        if (expandedPlanId) {
+            fetchReviewHistory(expandedPlanId);
+        }
+    }, [expandedPlanId]);
 
     // Week selection for UI
     const availableWeeks = useMemo(() => {
@@ -463,6 +493,44 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                             ))}
                         </ul>
                     </>
+                )}
+
+                {/* Audit Trail Timeline */}
+                {reviewHistory[plan.id] && reviewHistory[plan.id].length > 0 && (
+                    <div className="mt-6 mb-2">
+                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                            <History size={14} className="text-gray-500" />
+                            審核歷程
+                        </h4>
+                        <ol className="relative border-l border-gray-200 ml-2 space-y-4">
+                            {reviewHistory[plan.id].map((item) => {
+                                const actionConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+                                    'submitted':   { label: '提交計畫', color: 'bg-blue-100 text-blue-700',   icon: <FileText size={12} /> },
+                                    'resubmitted': { label: '重新提交', color: 'bg-purple-100 text-purple-700', icon: <RefreshCw size={12} /> },
+                                    'approved':    { label: '通過',     color: 'bg-green-100 text-green-700',  icon: <CheckCircle size={12} /> },
+                                    'rejected':    { label: '退回',     color: 'bg-red-100 text-red-700',      icon: <XCircle size={12} /> },
+                                };
+                                const cfg = actionConfig[item.action] || { label: item.action, color: 'bg-gray-100 text-gray-600', icon: null };
+                                return (
+                                    <li key={item.id} className="ml-4">
+                                        <span className="absolute -left-1.5 flex items-center justify-center w-3 h-3 rounded-full bg-gray-200 ring-2 ring-white mt-1" />
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${cfg.color}`}>
+                                                {cfg.icon} {cfg.label}
+                                            </span>
+                                            <span className="text-xs text-gray-500 font-medium">{item.actor_name}</span>
+                                            <span className="text-xs text-gray-400">{new Date(item.created_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                        </div>
+                                        {item.comment && (
+                                            <p className="mt-1 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1 border border-gray-100 whitespace-pre-line">
+                                                {item.comment}
+                                            </p>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    </div>
                 )}
 
                 {/* Review Action Area */}

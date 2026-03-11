@@ -120,7 +120,7 @@ const AppContent: React.FC = () => {
     console.log(`[Bootstrap] Starting for user: ${userId}`);
 
     // --- MOCK DATA MODE FOR DEV LOGIN ---
-    if (userId === 'a0000009-0000-0000-0000-000000000009') {
+    if (import.meta.env.DEV && userId === 'a0000009-0000-0000-0000-000000000009') {
       console.log("[Bootstrap] ⚠️ MOCK DATA MODE ACTIVATED");
       const mockKen: User = {
         id: userId,
@@ -331,7 +331,7 @@ const AppContent: React.FC = () => {
 
   const handleReviewUpdate = React.useCallback(async (plan: WeeklyPlanSubmission) => {
     try {
-      await PlanService.updateReviewData(plan.id, plan.status, plan.reviewComment || '', plan.lastWeekReview);
+      await PlanService.updateReviewData(plan.id, plan.status, plan.reviewComment || '', plan.lastWeekReview, currentUser?.id || '', currentUser?.name || '主管');
       setWeeklyPlans(prev => {
         const i = prev.findIndex(p => p.id === plan.id);
         if (i >= 0) {
@@ -353,7 +353,7 @@ const AppContent: React.FC = () => {
   return (
     <React.Suspense fallback={<LoadingScreen message="模組加載中" />}>
       <Routes>
-        <Route path="/" element={session ? <Navigate to="/dashboard" replace /> : <Login onDevLogin={() => {
+        <Route path="/" element={session ? <Navigate to="/dashboard" replace /> : <Login onDevLogin={import.meta.env.DEV ? () => {
           const kenId = 'a0000009-0000-0000-0000-000000000009';
           const fakeSession = {
             user: {
@@ -365,7 +365,7 @@ const AppContent: React.FC = () => {
           setSession(fakeSession);
           setIsLoading(true);
           bootstrapSession(fakeSession);
-        }} />} />
+        } : undefined} />} />
         <Route
           path="/dashboard"
           element={

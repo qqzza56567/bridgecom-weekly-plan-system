@@ -159,32 +159,57 @@ export const MonthlyReport: React.FC<MonthlyReportProps> = ({ users }) => {
                             {/* 戰略對齊度 */}
                             <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-4 opacity-5"><TrendingUp className="w-24 h-24" /></div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
+                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
                                     <span className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3"><TrendingUp size={16} /></span>
                                     戰略專注與對齊度
                                 </h3>
 
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm text-slate-500 font-medium">月度平均插單率</span>
-                                    <span className={`text-2xl font-black ${report.strategicFocus.averageUnplannedRatio > 50 ? 'text-red-600' : (report.strategicFocus.averageUnplannedRatio > 20 ? 'text-yellow-600' : 'text-green-600')}`}>
-                                        {report.strategicFocus.averageUnplannedRatio}%
-                                    </span>
-                                </div>
-                                <div className="w-full bg-slate-200 rounded-full h-2 mb-6">
-                                    <div className={`h-2 rounded-full ${report.strategicFocus.averageUnplannedRatio > 50 ? 'bg-red-500' : (report.strategicFocus.averageUnplannedRatio > 20 ? 'bg-yellow-500' : 'bg-green-500')}`} style={{ width: `${Math.min(100, report.strategicFocus.averageUnplannedRatio)}%` }}></div>
-                                </div>
+                                {/* Data Quality Warning */}
+                                {(report.dataQuality !== undefined && report.dataQuality < 100) && (
+                                    <div className={`mb-4 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border ${
+                                        report.dataQuality === 0
+                                            ? 'bg-gray-100 border-gray-200 text-gray-500'
+                                            : 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                                    }`}>
+                                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                        {report.dataQuality === 0
+                                            ? '本月所有週次均缺乏每日計畫比對數據，插單率無法計算。請先由主管為各週生成 AI 執行報告。'
+                                            : `數據警告：僅 ${report.dataQuality}% 的週次有完整每日執行分析，插單率數據可能低估。`
+                                        }
+                                    </div>
+                                )}
 
-                                <div className="flex gap-4">
-                                    <div className="flex-1 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                        <div className="text-xs text-slate-400 mb-1">對齊原定計畫</div>
-                                        <div className="font-bold text-slate-700">{report.strategicFocus.alignedTasks} 項</div>
+                                {/* Strategic Focus Stats — hide if no data at all */}
+                                {(report.dataQuality === undefined || report.dataQuality > 0) ? (
+                                    <>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm text-slate-500 font-medium">月度平均插單率</span>
+                                            <span className={`text-2xl font-black ${report.strategicFocus.averageUnplannedRatio > 50 ? 'text-red-600' : (report.strategicFocus.averageUnplannedRatio > 20 ? 'text-yellow-600' : 'text-green-600')}`}>
+                                                {report.strategicFocus.averageUnplannedRatio}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 rounded-full h-2 mb-6">
+                                            <div className={`h-2 rounded-full ${report.strategicFocus.averageUnplannedRatio > 50 ? 'bg-red-500' : (report.strategicFocus.averageUnplannedRatio > 20 ? 'bg-yellow-500' : 'bg-green-500')}`} style={{ width: `${Math.min(100, report.strategicFocus.averageUnplannedRatio)}%` }}></div>
+                                        </div>
+
+                                        <div className="flex gap-4">
+                                            <div className="flex-1 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                                <div className="text-xs text-slate-400 mb-1">對齊原定計畫</div>
+                                                <div className="font-bold text-slate-700">{report.strategicFocus.alignedTasks} 項</div>
+                                            </div>
+                                            <div className="flex-1 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                                <div className="text-xs text-slate-400 mb-1">臨時插單任務</div>
+                                                <div className="font-bold text-slate-700">{report.strategicFocus.unplannedTasks} 項</div>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="py-6 text-center text-gray-400 text-sm">
+                                        — 無插單率數據 —
                                     </div>
-                                    <div className="flex-1 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                        <div className="text-xs text-slate-400 mb-1">臨時插單任務</div>
-                                        <div className="font-bold text-slate-700">{report.strategicFocus.unplannedTasks} 項</div>
-                                    </div>
-                                </div>
+                                )}
                             </div>
+
 
                             {/* 執行可靠度 */}
                             <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 relative overflow-hidden">

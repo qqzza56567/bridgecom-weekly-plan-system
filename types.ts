@@ -96,6 +96,7 @@ export interface DailyPlanSubmission {
 }
 
 export interface MonthlyReportData {
+  dataQuality?: number; // 0-100，有 AI 週報的週次比例；低於 100 代表部分週次欠缺每日計畫對比數據
   strategicFocus: {
     averageUnplannedRatio: number;
     alignedTasks: number;
