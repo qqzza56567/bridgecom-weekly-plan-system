@@ -333,6 +333,29 @@ export const generateWeeklyReport = async (
        - suggestion: 給主管的一段溝通建議 (例如該不該找員工 1on1，或該如何讚賞)。
        - highlight: 表現優異的亮點 (例如某天專注完成了重要計畫)。若無明顯亮點傳回 null。
 
+    請務必回傳一個 JSON 物件，格式如下：
+    {
+      "statusTheme": "green" | "yellow" | "red",
+      "statusText": string,
+      "totalTasks": number,
+      "unplannedTasks": number,
+      "unplannedRatio": number,
+      "alignedTasks": number,
+      "taskEvaluations": [
+        {
+          "date": string,
+          "task": string,
+          "isAligned": boolean,
+          "reason": string
+        }
+      ],
+      "ai": {
+        "critical": string | null,
+        "suggestion": string,
+        "highlight": string | null
+      }
+    }
+
     請使用繁體中文 (台灣) 回覆，文字風格要專業且簡潔。
   `;
 
