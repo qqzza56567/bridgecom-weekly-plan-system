@@ -881,17 +881,25 @@ export const Review: React.FC<ReviewProps> = ({ user, users, weeklyPlans, onUpda
                                                             </h4>
 
                                                             <div className="space-y-4 text-sm text-indigo-900/80 leading-relaxed bg-white/40 p-4 rounded-lg">
-                                                                {report.ai.critical && (
+                                                                {report.ai?.critical && (
                                                                     <p className="flex items-start">
                                                                         <span className="font-bold text-red-600 mr-2 flex-shrink-0">⚠️ 異常狀態：</span>
                                                                         <span className="text-gray-700">{report.ai.critical}</span>
                                                                     </p>
                                                                 )}
-                                                                <p className="flex items-start">
-                                                                    <span className="font-bold text-blue-600 mr-2 flex-shrink-0">💡 溝通建議：</span>
-                                                                    <span className="text-gray-700">{report.ai.suggestion}</span>
-                                                                </p>
-                                                                {report.ai.highlight && (
+                                                                {report.ai?.suggestion && (
+                                                                    <p className="flex items-start">
+                                                                        <span className="font-bold text-blue-600 mr-2 flex-shrink-0">💡 溝通建議：</span>
+                                                                        <span className="text-gray-700">{report.ai.suggestion}</span>
+                                                                    </p>
+                                                                )}
+                                                                {!report.ai?.suggestion && report.suggestion && (
+                                                                    <p className="flex items-start">
+                                                                        <span className="font-bold text-blue-600 mr-2 flex-shrink-0">💡 溝通建議：</span>
+                                                                        <span className="text-gray-700">{report.suggestion}</span>
+                                                                    </p>
+                                                                )}
+                                                                {report.ai?.highlight && (
                                                                     <p className="flex items-start">
                                                                         <span className="font-bold text-green-600 mr-2 flex-shrink-0">👍 亮點表現：</span>
                                                                         <span className="text-gray-700">{report.ai.highlight}</span>
