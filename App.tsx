@@ -237,7 +237,7 @@ const AppContent: React.FC = () => {
       }
     } catch (err: any) {
       console.error("[Bootstrap] Failed:", err);
-      toast.error("資料載入異常，請重新整理頁面。");
+      toast.error("資料載入異常：" + (err.message || String(err)));
     } finally {
       setIsLoading(false);
     }

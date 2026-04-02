@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, DailyPlanSubmission } from '../types';
 import { COMPANY_NAME } from '../constants';
 import { validateSmartGoals } from '../services/geminiService';
-import { AlertCircle, CheckCircle, Loader2, Info, ChevronLeft, ChevronRight, RotateCcw, Save } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, Info, ChevronLeft, ChevronRight, RotateCcw, Save, HelpCircle } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { Header } from './Header';
 import { generateId } from '../utils/uuid';
@@ -305,17 +305,17 @@ export const DailyPlan: React.FC<DailyPlanProps> = ({ user, onSubmit, onBack }) 
                             {/* Determine whether to show edit mode or view mode */}
                             {!isReadOnly && (!existingPlan || isWithdrawn) ? (
                                 <>
-                                    {/* Instruction Box */}
-                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 mb-8 shadow-sm flex items-start gap-4">
-                                        <Info className="w-6 h-6 text-blue-500 mt-0.5 flex-shrink-0" />
-                                        <div className="text-sm leading-relaxed text-blue-900">
-                                            <p className="font-bold mb-2 text-base">SMART 原則填寫指南：</p>
-                                            <ul className="list-disc list-inside space-y-1 text-blue-800">
-                                                <li><span className="font-bold">S (具體)</span>: 明確說明你要做什麼。</li>
-                                                <li><span className="font-bold">M (可衡量)</span>: 有數字或可驗證的結果。</li>
-                                                <li><span className="font-bold">A (可達成)</span>: 在當日時間內可以完成。</li>
-                                                <li><span className="font-bold">R (相關)</span>: 與你的職責或週計畫相關。</li>
-                                                <li><span className="font-bold">T (時限)</span>: 在當日前完成。</li>
+                                    {/* Tooltip Instruction Box */}
+                                    <div className="mb-8 inline-flex items-center gap-2 group relative z-10 cursor-help">
+                                        <span className="font-bold text-gray-700 text-lg">SMART 原則填寫指南</span>
+                                        <HelpCircle className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                                        <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-xl p-5 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
+                                            <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm text-left">
+                                                <li><span className="font-bold text-blue-600">S (具體)</span>: 明確說明你要做什麼。</li>
+                                                <li><span className="font-bold text-blue-600">M (可衡量)</span>: 有數字或可驗證的結果。</li>
+                                                <li><span className="font-bold text-blue-600">A (可達成)</span>: 在當日時間內可以完成。</li>
+                                                <li><span className="font-bold text-blue-600">R (相關)</span>: 與你的職責或週計畫相關。</li>
+                                                <li><span className="font-bold text-blue-600">T (時限)</span>: 在當日前完成。</li>
                                             </ul>
                                         </div>
                                     </div>
